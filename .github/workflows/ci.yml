@@ -1,7 +1,18 @@
 name: CI
+# 合并门禁（规则见 AGENTS.md §7）：静态检查、生成代码一致性、全量测试、
+# Android / Linux / Windows release 构建、工作流 lint，PR 上另查提交信息。
+# 发布工作流经 workflow_call 复用同一套检查，打包前先过门禁。
+#
+# 缓存（细节见 docs/ci_performance.md）：每样从网络下载的东西都有缓存——Flutter
+# SDK 与引擎产物、pub 包、构建钩子下载的 sqlite3 库、Gradle 依赖与发行版、
+# Robolectric 的 Android jar、actionlint。缓存只由 main 写入，PR / tag 只读，
+# 仓库 10 GB 的缓存配额留给 main 上所有运行都会回退到的那一份。
 on:
   push:
     branches: [main]
+    # 只改文档时不跑。例外是 docs/releases/：它随应用打包（更新日志页），测试会
+    # 核对每个版本都能读到；它通常与版本号同一个 PR 提交，发布时也会经
+    # workflow_call 跑全量门禁，所以不为它单独触发。
     paths-ignore:
       - 'docs/**'
       - '**.md'
@@ -26,11 +37,12 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # 只取消同一 PR 的旧运行；main 上每个提交都要留下完整结果。
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   static-checks:
     name: Format, analyze & codegen
+    # 与发布工作流一致地固定镜像：ubuntu-latest 将于 2026-10-19 切到 Ubuntu 26。
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -39,6 +51,7 @@ jobs:
       - name: Set up Flutter
         id: setup
         uses: ./.github/actions/setup-flutter
+      # 各项检查互不依赖：前一项失败也继续跑后面的，一次报出全部问题。
       - name: Check formatting
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: dart format --output=none --set-exit-if-changed lib test integration_test tool
@@ -48,6 +61,7 @@ jobs:
       - name: Check ARB metadata
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: dart run tool/check_arb.dart
+      # 重新生成本地化、drift 代码与插件注册文件，与提交内容不一致即失败。
       - name: Check generated code is committed
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: |
@@ -60,7 +74,6 @@ jobs:
             echo "::error::Generated files differ from the commit. Run 'flutter pub get', 'flutter gen-l10n' and 'dart run build_runner build --delete-conflicting-outputs', then commit the result."
             exit 1
           fi
-
   test-shards:
     name: Tests (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
@@ -68,7 +81,10 @@ jobs:
     outputs:
       shard-total: ${{ strategy.job-total }}
     strategy:
+      # 一片失败仍跑完其他片，避免丢失失败用例与覆盖率。
       fail-fast: false
+      # 6 片：测试执行约 30 分钟机时（4 片时每片 7～9 分钟），分成 6 片后与
+      # Android / Windows 构建的耗时相当，再加片只增加每片固定的安装与编译开销。
       matrix:
         shard: [0, 1, 2, 3, 4, 5]
     steps:
@@ -76,6 +92,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Flutter
         uses: ./.github/actions/setup-flutter
+      # GitHub Actions 上默认使用 github 报告器，失败用例直接标注到源码行。
       - name: Run tests
         env:
           SHARD_INDEX: ${{ matrix.shard }}
@@ -101,7 +118,8 @@ jobs:
           name: coverage-lcov-shard-${{ matrix.shard }}
           path: coverage/lcov.info
           retention-days: 1
-
+  # 保留名为 Tests 的单一门禁；任意分片失败时它也失败，不能误报全量通过。
+  # 覆盖率按源文件与行号合并，不能拼接 LCOV 或平均各片的覆盖率百分比。
   test:
     name: Tests
     needs: test-shards
@@ -157,7 +175,6 @@ jobs:
           name: coverage-lcov
           path: coverage/lcov.info
           retention-days: 14
-
   android:
     name: Android release build
     if: ${{ !inputs.skip-android-build }}
@@ -173,6 +190,17 @@ jobs:
         uses: ./.github/actions/setup-flutter
         with:
           java: 'true'
+      - name: Main cache
+        uses: ./.github/actions/main-cache
+      - name: Flutter pub get retry 5 times
+        run: |
+          set -e
+          for i in {1..5}; do
+            echo "==== pub get attempt $i ===="
+            flutter pub get && exit 0
+            sleep 30
+          done
+          exit 1
       - name: Create throwaway signing key
         run: |
           password="$(openssl rand -hex 24)"
@@ -185,13 +213,13 @@ jobs:
             printf 'keyAlias=ci\n'
             printf 'storeFile=ci-throwaway.jks\n'
           } > android/key.properties
-      - name: Build release APK (arm64) 重试3次
+      - name: Build release APK (arm64) retry 5 times
         run: |
           set -e
-          for i in {1..3}; do
-            echo "==== 第 $i 次尝试编译安卓 ===="
+          for i in {1..5}; do
+            echo "==== build apk attempt $i ===="
             flutter build apk --release --target-platform android-arm64 && exit 0
-            sleep 20
+            sleep 30
           done
           exit 1
       - name: Cache Robolectric Android jars
@@ -207,7 +235,7 @@ jobs:
           stat --format=%s build/app/outputs/flutter-apk/app-release.apk |
             awk '{ printf "### Android build\n\napp-release.apk (arm64-v8a): %.1f MiB\n", $1 / 1048576 }' \
             >> "$GITHUB_STEP_SUMMARY"
-
+  # 桌面构建关闭
   linux:
     name: Linux release build
     if: false
@@ -231,7 +259,6 @@ jobs:
           du -sb build/linux/x64/release/bundle |
             awk '{ printf "### Linux build\n\nbundle/: %.1f MiB\n", $1 / 1048576 }' \
             >> "$GITHUB_STEP_SUMMARY"
-
   windows:
     name: Windows release build
     if: false
@@ -250,7 +277,6 @@ jobs:
           du -sb build/windows/x64/runner/Release |
             awk '{ printf "### Windows build\n\nRelease/: %.1f MiB\n", $1 / 1048576 }' \
             >> "$GITHUB_STEP_SUMMARY"
-
   actionlint:
     name: Workflow lint
     runs-on: ubuntu-24.04
@@ -279,7 +305,6 @@ jobs:
           tar -xzf "$archive" -C ~/.cache/actionlint actionlint
       - name: Run actionlint
         run: ~/.cache/actionlint/actionlint -color
-
   commits:
     name: Commit messages
     if: github.event_name == 'pull_request'
