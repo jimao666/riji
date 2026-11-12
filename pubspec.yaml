@@ -25,7 +25,7 @@ dependencies:
   path_provider: ^2.1.6
   path: ^1.9.1
   shared_preferences: ^2.5.6
-  intl: ^0.18.1
+  intl: ^0.20.2
   flutter_staggered_grid_view: ^0.7.0
   # 块编辑器（嵌套块、/ 菜单、Markdown 输入、拖动排序）。pub 上的 6.2.0 在
   # Flutter ≥ 3.44 上编译不过（TextInputClient.onFocusReceived，上游 #1204），
@@ -40,7 +40,7 @@ dependencies:
   loading_indicator_m3e: ^0.1.1
   share_plus: ^10.1.4
   widget_screenshot_plus: ^0.0.9
-  table_calendar: ^3.0.9
+  table_calendar: ^3.4.0
   flutter_svg: ^2.3.2
   url_launcher: ^6.3.3
   package_info_plus: ^9.0.0
@@ -139,4 +139,5 @@ flutter_launcher_icons:
   ios: true
   image_path: assets/app_icon/mingcute_icon.png
 dependency_overrides:
-  table_calendar: 3.0.9
+  table_calendar: ^3.4.0
+
