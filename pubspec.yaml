@@ -40,7 +40,7 @@ dependencies:
   loading_indicator_m3e: ^0.1.1
   share_plus: ^10.1.4
   widget_screenshot_plus: ^0.0.9
-  table_calendar: ^3.4.0
+  table_calendar: ^3.3.0
   flutter_svg: ^2.3.2
   url_launcher: ^6.3.3
   package_info_plus: ^9.0.0
@@ -139,5 +139,6 @@ flutter_launcher_icons:
   ios: true
   image_path: assets/app_icon/mingcute_icon.png
 dependency_overrides:
-  table_calendar: ^3.4.0
+  intl: ^0.20.2
 
+  
