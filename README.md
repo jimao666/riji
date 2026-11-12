@@ -6,7 +6,7 @@
 
 **一本只属于你的本地日记**
 
-免费 · 开源 · 无广告 · 无需注册 · 数据只存在你自己的设备里
+免费 · 开源 · 无广告 · 无需注册 · 数据只存在你自己的设备里奥
 
 [![Release](https://img.shields.io/github/v/release/CikeSeven/jotsy?style=flat-square&color=1E6586&label=Release)](https://github.com/CikeSeven/jotsy/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/CikeSeven/jotsy/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/CikeSeven/jotsy/actions/workflows/ci.yml)
