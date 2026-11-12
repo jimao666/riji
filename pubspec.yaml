@@ -138,3 +138,5 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: assets/app_icon/mingcute_icon.png
+dependency_overrides:
+  table_calendar: 3.0.9
