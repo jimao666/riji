@@ -5,7 +5,6 @@ environment:
 flutter: 3.44.0
 scripts:
 - flutter pub get
-- flutter build apk --release --target-platform android-arm,android-arm64 --android-skip-build-dependency-validation
+- flutter build apk --release --target-platform android-arm,android-arm64
 artifacts:
 - build/app/outputs/flutter-apk/app-release.apk
-
