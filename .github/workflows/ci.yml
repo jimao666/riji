@@ -235,10 +235,9 @@ jobs:
           stat --format=%s build/app/outputs/flutter-apk/app-release.apk |
             awk '{ printf "### Android build\n\napp-release.apk (arm64-v8a): %.1f MiB\n", $1 / 1048576 }' \
             >> "$GITHUB_STEP_SUMMARY"
-  # 桌面构建关闭
   linux:
     name: Linux release build
-    if: false
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -261,7 +260,7 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
   windows:
     name: Windows release build
-    if: false
+    if: ${{ false }}
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
