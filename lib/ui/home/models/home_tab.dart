@@ -19,7 +19,8 @@ enum HomeTab {
   diaries,
   todos,
   calendar,
-  explore;
+  explore,
+  tool;
 
   /// 底栏文案。
   String label(AppLocalizations l10n) => switch (this) {
@@ -27,6 +28,7 @@ enum HomeTab {
     HomeTab.todos => l10n.navTodos,
     HomeTab.calendar => l10n.navCalendar,
     HomeTab.explore => l10n.navExplore,
+    HomeTab.tool => "工具",
   };
 
   /// 底栏图标。
@@ -35,11 +37,15 @@ enum HomeTab {
     HomeTab.todos => FontAwesomeIcons.solidSquareCheck,
     HomeTab.calendar => FontAwesomeIcons.solidCalendar,
     HomeTab.explore => FontAwesomeIcons.solidCompass,
+    HomeTab.tool => FontAwesomeIcons.solidScrewdriverWrench,
   };
 
   /// 是否有首页的“新建”FAB（玻璃底栏时为并排按钮）：日记页新建日记，
   /// 待办页新建待办；其余 Tab 没有。
-  bool get hasCreateFab => this == HomeTab.diaries || this == HomeTab.todos;
+  bool get hasCreateFab => switch(this){
+    HomeTab.diaries || HomeTab.todos => true,
+    _ => false,
+  };
 
   /// 这个 Tab 的背景区域（“背景与材质”里可以单独设置）。
   AppBackgroundArea get backgroundArea => switch (this) {
@@ -47,21 +53,17 @@ enum HomeTab {
     HomeTab.todos => AppBackgroundArea.todos,
     HomeTab.calendar => AppBackgroundArea.calendar,
     HomeTab.explore => AppBackgroundArea.explore,
+    HomeTab.tool => AppBackgroundArea.explore,
   };
 }
 
 /// 按功能开关推出可见的 Tab，即底栏（宽窗口为侧边栏）从左到右的顺序。
-///
-/// 日记是应用的主体，始终可见（设置入口也在它的顶栏“更多”里），并排在
-/// 中间：其余开启的 Tab 保持日历 → 待办 → 探索的相对顺序，日记插在它们的
-/// 中点——共奇数个 Tab 时正中，偶数个时居中偏左（四个时依次为日历、日记、
-/// 待办、探索；两个时日记仍在最左）。待办、日历、探索全部关闭时只剩日记
-/// 一项，首页不显示底栏（见 `HomePage`）。
 List<HomeTab> visibleHomeTabs(AppFeatures features) =>
     _withDiariesCentered(<HomeTab>[
       if (features.calendar) HomeTab.calendar,
       if (features.todos) HomeTab.todos,
       if (features.explore) HomeTab.explore,
+      HomeTab.tool,
     ]);
 
 /// 全部 Tab 都开启时的底栏顺序（设置里导航栏样式的预览用）。
@@ -70,6 +72,7 @@ final List<HomeTab> allHomeTabsInBarOrder = List<HomeTab>.unmodifiable(
     HomeTab.calendar,
     HomeTab.todos,
     HomeTab.explore,
+    HomeTab.tool,
   ]),
 );
 
