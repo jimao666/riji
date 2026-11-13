@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 class WorkClockPage extends StatefulWidget {
   const WorkClockPage({super.key});
@@ -30,6 +31,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
 
   int selectYear = DateTime.now().year;
   int selectMonth = DateTime.now().month;
+  DateTime? selectedDay;
 
   String? filterPlace;
   String searchText = "";
@@ -38,6 +40,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
   @override
   void initState() {
     super.initState();
+    selectedDay = DateTime.now();
     loadAllData();
     searchCtrl.addListener(() {
       setState(() {
@@ -124,48 +127,14 @@ class _WorkClockPageState extends State<WorkClockPage> {
     }).toList();
   }
 
-  List<Map<String, dynamic>> getDayGroupData() {
-    final filter = getFilterRecords();
-    final Map<String, List<Map<String, dynamic>>> group = {};
-    for (var item in filter) {
-      final key = item["date"];
-      group.putIfAbsent(key, () => []);
-      group[key]!.add(item);
-    }
-    final res = <Map<String, dynamic>>[];
-    for (var entry in group.entries) {
-      final day = DateTime.parse(entry.key);
-      double sumH = 0;
-      for (var i in entry.value) {
-        sumH += double.parse(i["hour"]);
-      }
-      res.add({
-        "dateStr": entry.key,
-        "dateObj": day,
-        "sumHour": sumH,
-        "count": entry.value.length,
-        "items": entry.value,
-      });
-    }
-    res.sort((a, b) => a["dateObj"].compareTo(b["dateObj"]));
-    return res;
+  List<Map<String, dynamic>> getDayRecords(DateTime day) {
+    final dayStr = "${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}";
+    return getFilterRecords().where((r) => r["date"] == dayStr).toList();
   }
 
-  Map<String, Map<String, dynamic>> getPlaceGroupStat() {
-    final filter = getFilterRecords();
-    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
-    final Map<String, Map<String, dynamic>> placeStat = {};
-    for (var r in filter) {
-      final p = r["place"].toString();
-      final dStr = r["date"].toString();
-      final h = double.parse(r["hour"]);
-      final w = h / 8 * dayWage;
-      placeStat.putIfAbsent(p, () => {"days": <String>{}, "hour": 0.0, "wage": 0.0});
-      placeStat[p]!["days"].add(dStr);
-      placeStat[p]!["hour"] += h;
-      placeStat[p]!["wage"] += w;
-    }
-    return placeStat;
+  Set<String> getHasClockDaySet() {
+    final list = getFilterRecords();
+    return list.map((r) => r["date"].toString()).toSet();
   }
 
   bool todayAutoSigned() {
@@ -374,7 +343,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
     }
   }
 
-  // 备份全部记录json
   Future<void> backupRecord() async {
     final dir = await FilePicker.platform.getDirectoryPath();
     if (dir == null) return;
@@ -386,7 +354,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
     }
   }
 
-  // 恢复备份
   Future<void> restoreRecord() async {
     final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ["json"]);
     if (res == null) return;
@@ -424,8 +391,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
   }
 
   void openSummaryDialog() {
-    final group = getDayGroupData();
-    final placeStat = getPlaceGroupStat();
+    final group = _groupByDay();
+    final placeStat = _groupByPlace();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -507,9 +474,127 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 
+  List<Map<String, dynamic>> _groupByDay() {
+    final filter = getFilterRecords();
+    final Map<String, List<Map<String, dynamic>>> group = {};
+    for (var item in filter) {
+      final key = item["date"];
+      group.putIfAbsent(key, () => []);
+      group[key]!.add(item);
+    }
+    final res = <Map<String, dynamic>>[];
+    for (var entry in group.entries) {
+      final day = DateTime.parse(entry.key);
+      double sumH = 0;
+      for (var i in entry.value) {
+        sumH += double.parse(i["hour"]);
+      }
+      res.add({
+        "dateStr": entry.key,
+        "dateObj": day,
+        "sumHour": sumH,
+        "count": entry.value.length,
+        "items": entry.value,
+      });
+    }
+    res.sort((a, b) => a["dateObj"].compareTo(b["dateObj"]));
+    return res;
+  }
+
+  Map<String, Map<String, dynamic>> _groupByPlace() {
+    final filter = getFilterRecords();
+    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    final Map<String, Map<String, dynamic>> placeStat = {};
+    for (var r in filter) {
+      final p = r["place"].toString();
+      final dStr = r["date"].toString();
+      final h = double.parse(r["hour"]);
+      final w = h / 8 * dayWage;
+      placeStat.putIfAbsent(p, () => {"days": <String>{}, "hour": 0.0, "wage": 0.0});
+      placeStat[p]!["days"].add(dStr);
+      placeStat[p]!["hour"] += h;
+      placeStat[p]!["wage"] += w;
+    }
+    return placeStat;
+  }
+
+  Widget buildCalendarGrid() {
+    final firstDay = DateTime(selectYear, selectMonth, 1);
+    final firstWeekDay = firstDay.weekday;
+    final daysInMonth = DateTime(selectYear, selectMonth + 1, 0).day;
+    final hasClockDays = getHasClockDaySet();
+    final today = DateTime.now();
+    final todayStr = "${today.year}-${today.month}-${today.day}";
+
+    List<Widget> cells = [];
+    // 星期表头
+    const weekTitles = ["一", "二", "三", "四", "五", "六", "日"];
+    for (var w in weekTitles) {
+      cells.add(
+        Expanded(child: Center(child: Text(w, style: const TextStyle(fontWeight: FontWeight.w500)))),
+      );
+    }
+    // 前面空白占位
+    for (int i = 1; i < firstWeekDay; i++) {
+      cells.add(const Expanded(child: SizedBox()));
+    }
+    // 日期格子
+    for (int d = 1; d <= daysInMonth; d++) {
+      final dayDt = DateTime(selectYear, selectMonth, d);
+      final dayKey = "${selectYear}-${selectMonth}-$d";
+      final isClock = hasClockDays.contains(dayKey);
+      final isSelected = selectedDay?.year == selectYear && selectedDay?.month == selectMonth && selectedDay?.day == d;
+      final isToday = dayKey == todayStr;
+
+      cells.add(
+        Expanded(
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                selectedDay = dayDt;
+              });
+            },
+            child: Container(
+              margin: const EdgeInsets.all(2),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.blue
+                    : isClock
+                        ? Colors.green.shade200
+                        : isToday
+                            ? Colors.blue.shade100
+                            : null,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                "$d",
+                style: TextStyle(
+                  color: isSelected ? Colors.white : null,
+                  fontWeight: isClock ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        GridView.count(
+          shrinkWrap: true,
+          crossAxisCount: 7,
+          physics: const NeverScrollableScrollPhysics(),
+          children: cells,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filterList = getFilterRecords();
+    final dayRecords = selectedDay == null ? [] : getDayRecords(selectedDay!);
     return Scaffold(
       appBar: AppBar(
         title: const Text("记工打卡"),
@@ -527,7 +612,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            //年月+折叠按钮行
+            // 月份切换 + 折叠按钮
             Row(
               children: [
                 IconButton(
@@ -572,12 +657,14 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 )
               ],
             ),
-            //搜索框，永远可见
+            // 日历
+            buildCalendarGrid(),
+            const SizedBox(height: 12),
             TextField(
               controller: searchCtrl,
               decoration: const InputDecoration(labelText: "搜索工地", hintText: "输入工地名称搜索", border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
             ),
-            const SizedBox(height:10),
+            const SizedBox(height: 10),
             if (panelExpanded)
               Expanded(
                 flex: 0,
@@ -688,22 +775,23 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     ],
                   ),
                 ),
-            if (panelExpanded) const Text("打卡记录", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-            if (panelExpanded) const SizedBox(height: 8),
+            // 选中日期的打卡记录
+            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
             Expanded(
-              child: filterList.isEmpty
-                  ? const Center(child: Text("当前筛选条件下暂无打卡记录"))
+              child: dayRecords.isEmpty
+                  ? const Center(child: Text("这一天没有打卡记录"))
                   : ListView.builder(
-                      itemCount: filterList.length,
+                      itemCount: dayRecords.length,
                       itemBuilder: (ctx, idx) {
-                        final item = filterList[idx];
+                        final item = dayRecords[idx];
                         final realIdx = recordList.indexOf(item);
                         final dt = DateTime.parse(item["time"]);
                         final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
                         final settleTxt = item["isSettled"] == true ? "✅已结" : "☐未结";
                         return ListTile(
                           dense: true,
-                          title: Text("${item["date"]} ${item["place"]} ${item["hour"]}h $settleTxt"),
+                          title: Text("${item["place"]} ${item["hour"]}h $settleTxt"),
                           subtitle: Text("$timeStr ${item["type"]}"),
                           trailing: SizedBox(
                             width: 120,
