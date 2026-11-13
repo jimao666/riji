@@ -108,6 +108,8 @@ abstract class AppLocalizations {
   /// **'Jotsy'**
   String get appTitle;
 
+  String get navTools;
+
   /// Auto-generated metadata for navDiaries.
   ///
   /// In en, this message translates to:
