@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:convert';
 import 'dart:io';
 
 class WorkClockPage extends StatefulWidget {
@@ -17,37 +18,65 @@ class _WorkClockPageState extends State<WorkClockPage> {
   final TextEditingController hourCtrl = TextEditingController();
   final TextEditingController placeCtrl = TextEditingController();
   final TextEditingController wageCtrl = TextEditingController();
+  final TextEditingController searchCtrl = TextEditingController();
+
+  bool panelExpanded = true;
 
   int monthDays = 0;
   double monthTotalHour = 0.0;
   double monthTotalWage = 0.0;
+  double monthSettledWage = 0.0;
+  double monthUnSettledWage = 0.0;
 
   int selectYear = DateTime.now().year;
   int selectMonth = DateTime.now().month;
+
+  String? filterPlace;
+  String searchText = "";
+  List<String> allPlaceList = [];
 
   @override
   void initState() {
     super.initState();
     loadAllData();
+    searchCtrl.addListener(() {
+      setState(() {
+        searchText = searchCtrl.text.trim();
+      });
+    });
   }
 
   Future<void> loadAllData() async {
     final sp = await SharedPreferences.getInstance();
-    final rawRecord = sp.getString("work_record_v4");
+    final rawRecord = sp.getString("work_record_v8");
     final rawWage = sp.getString("daily_wage");
     if (rawRecord != null) {
-      recordList = List<Map<String, dynamic>>.from(json.decode(rawRecord));
+      final list = List<Map<String, dynamic>>.from(json.decode(rawRecord));
+      for (var item in list) {
+        item["isSettled"] ??= false;
+      }
+      recordList = list;
     }
     if (rawWage != null) {
       wageCtrl.text = rawWage;
     }
+    collectPlace();
     calcMonthStat();
     setState(() {});
   }
 
+  void collectPlace() {
+    final set = <String>{};
+    for (var r in recordList) {
+      set.add(r["place"]);
+    }
+    allPlaceList = set.toList();
+  }
+
   Future<void> saveRecords() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString("work_record_v4", json.encode(recordList));
+    await sp.setString("work_record_v8", json.encode(recordList));
+    collectPlace();
     calcMonthStat();
     setState(() {});
   }
@@ -60,146 +89,235 @@ class _WorkClockPageState extends State<WorkClockPage> {
   }
 
   void calcMonthStat() {
-    double dayWage = double.tryParse(wageCtrl.text) ?? 0;
-    Set<String> daySet = {};
-    double totalH = 0.0;
-    for (var r in recordList) {
+    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    final list = getFilterRecords();
+    final daySet = <String>{};
+    double totalH = 0;
+    double settled = 0;
+    double unSettled = 0;
+    for (var r in list) {
       final d = DateTime.parse(r["date"]);
-      if (d.year == selectYear && d.month == selectMonth) {
-        daySet.add(r["date"]);
-        totalH += double.parse(r["hour"]);
+      daySet.add("${d.year}-${d.month}-${d.day}");
+      final h = double.parse(r["hour"]);
+      final w = h / 8 * dayWage;
+      totalH += h;
+      if (r["isSettled"] == true) {
+        settled += w;
+      } else {
+        unSettled += w;
       }
     }
     monthDays = daySet.length;
     monthTotalHour = totalH;
-    monthTotalWage = totalH / 8 * dayWage;
+    monthTotalWage = settled + unSettled;
+    monthSettledWage = settled;
+    monthUnSettledWage = unSettled;
   }
 
-  bool todayHasAutoClock() {
+  List<Map<String, dynamic>> getFilterRecords() {
+    return recordList.where((r) {
+      final d = DateTime.parse(r["date"]);
+      final matchMonth = d.year == selectYear && d.month == selectMonth;
+      final matchPlace = filterPlace == null || r["place"] == filterPlace;
+      final matchSearch = searchText.isEmpty || r["place"].toString().contains(searchText);
+      return matchMonth && matchPlace && matchSearch;
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> getDayGroupData() {
+    final filter = getFilterRecords();
+    final Map<String, List<Map<String, dynamic>>> group = {};
+    for (var item in filter) {
+      final key = item["date"];
+      group.putIfAbsent(key, () => []);
+      group[key]!.add(item);
+    }
+    final res = <Map<String, dynamic>>[];
+    for (var entry in group.entries) {
+      final day = DateTime.parse(entry.key);
+      double sumH = 0;
+      for (var i in entry.value) {
+        sumH += double.parse(i["hour"]);
+      }
+      res.add({
+        "dateStr": entry.key,
+        "dateObj": day,
+        "sumHour": sumH,
+        "count": entry.value.length,
+        "items": entry.value,
+      });
+    }
+    res.sort((a, b) => a["dateObj"].compareTo(b["dateObj"]));
+    return res;
+  }
+
+  Map<String, Map<String, dynamic>> getPlaceGroupStat() {
+    final filter = getFilterRecords();
+    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    final Map<String, Map<String, dynamic>> placeStat = {};
+    for (var r in filter) {
+      final p = r["place"].toString();
+      final dStr = r["date"].toString();
+      final h = double.parse(r["hour"]);
+      final w = h / 8 * dayWage;
+      placeStat.putIfAbsent(p, () => {"days": <String>{}, "hour": 0.0, "wage": 0.0});
+      placeStat[p]!["days"].add(dStr);
+      placeStat[p]!["hour"] += h;
+      placeStat[p]!["wage"] += w;
+    }
+    return placeStat;
+  }
+
+  bool todayAutoSigned() {
     final now = DateTime.now();
-    final todayStr =
-        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    return recordList.any((item) => item["date"] == todayStr && item["type"] == "auto");
+    final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    return recordList.any((i) => i["date"] == todayStr && i["type"] == "全天打卡");
   }
 
   void autoClock() {
-    final now = DateTime.now();
-    final todayStr =
-        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    if (todayHasAutoClock()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ 今日已经提交全天打卡记录")),
-      );
+    if (todayAutoSigned()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 今日已经自动打卡过了")));
       return;
     }
+    final now = DateTime.now();
     final item = {
-      "date": todayStr,
+      "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
       "time": now.toIso8601String(),
       "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
       "hour": "8.00",
-      "type": "auto",
+      "type": "全天打卡",
+      "isSettled": false,
     };
-    setState(() {
-      recordList.add(item);
-    });
+    recordList.add(item);
     saveRecords();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ 全天打卡成功，工时8小时")),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 全天打卡成功，工时8h")));
   }
 
   void manualClock() {
     final h = double.tryParse(hourCtrl.text);
     if (h == null || h <= 0 || h > 24) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ 请输入合法工时（0~24）")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 请输入合法工时（0~24）")));
       return;
     }
     final now = DateTime.now();
-    final todayStr =
-        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
     final item = {
-      "date": todayStr,
+      "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
       "time": now.toIso8601String(),
       "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
       "hour": h.toStringAsFixed(2),
-      "type": "manual",
+      "type": "手动打卡",
+      "isSettled": false,
     };
-    setState(() {
-      recordList.add(item);
-      hourCtrl.clear();
-    });
+    recordList.add(item);
+    hourCtrl.clear();
     saveRecords();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ 手动打卡保存成功")),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 手动打卡成功")));
   }
 
-  void editRecord(int index) {
-    final item = recordList[index];
-    final editHourCtrl = TextEditingController(text: item["hour"]);
-    final editPlaceCtrl = TextEditingController(text: item["place"]);
+  void doRepairSign() async {
+    final pickDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().subtract(const Duration(days: 1)),
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime.now(),
+    );
+    if (pickDate == null) return;
+    final repairHourCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("修改本条打卡"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: editPlaceCtrl,
-              decoration: const InputDecoration(labelText: "工地地点"),
-            ),
-            TextField(
-              controller: editHourCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: "工时"),
-            ),
-          ],
+        title: Text("补签：${pickDate.year}-${pickDate.month}-${pickDate.day}"),
+        content: TextField(
+          controller: repairHourCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(hintText: "输入工时，例如 8 / 4"),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
           TextButton(
             onPressed: () {
-              final h = double.tryParse(editHourCtrl.text);
-              if (h == null || h <= 0 || h > 24) return;
-              setState(() {
-                recordList[index]["place"] = editPlaceCtrl.text.trim();
-                recordList[index]["hour"] = h.toStringAsFixed(2);
-              });
+              final h = double.tryParse(repairHourCtrl.text);
+              if (h == null || h <= 0 || h > 24) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("工时无效")));
+                return;
+              }
+              final item = {
+                "date": "${pickDate.year}-${pickDate.month.toString().padLeft(2, '0')}-${pickDate.day.toString().padLeft(2, '0')}",
+                "time": pickDate.toIso8601String(),
+                "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
+                "hour": h.toStringAsFixed(2),
+                "type": "补签",
+                "isSettled": false,
+              };
+              recordList.add(item);
               saveRecords();
               Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 补签成功")));
             },
-            child: const Text("保存修改"),
+            child: const Text("确认补签"),
           ),
         ],
       ),
     );
   }
 
-  void deleteItem(int index) {
+  void editRecord(int index) {
+    final item = recordList[index];
+    final editH = TextEditingController(text: item["hour"]);
+    final editP = TextEditingController(text: item["place"]);
+    bool settled = item["isSettled"] ?? false;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (sbCtx, sbSet) {
+        return AlertDialog(
+          title: const Text("修改打卡记录"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: editP, decoration: const InputDecoration(labelText: "工地地点")),
+              TextField(controller: editH, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: "工时")),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text("工钱已结清"),
+                value: settled,
+                onChanged: (v) {
+                  sbSet(() {
+                    settled = v ?? false;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+            TextButton(onPressed: () {
+              final h = double.tryParse(editH.text);
+              if (h == null || h <= 0 || h > 24) return;
+              recordList[index]["place"] = editP.text.trim();
+              recordList[index]["hour"] = h.toStringAsFixed(2);
+              recordList[index]["isSettled"] = settled;
+              saveRecords();
+              Navigator.pop(ctx);
+            }, child: const Text("保存")),
+          ],
+        );
+      }),
+    );
+  }
+
+  void deleteRecord(int index) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("确认删除"),
-        content: const Text("确定删除这条打卡记录？"),
+        title: const Text("确认删除？"),
+        content: const Text("这条记录会被移除"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() {
-                recordList.removeAt(index);
-              });
-              saveRecords();
-            },
-            child: const Text("删除", style: TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () {
+            recordList.removeAt(index);
+            saveRecords();
+            Navigator.pop(ctx);
+          }, child: const Text("删除", style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -209,92 +327,199 @@ class _WorkClockPageState extends State<WorkClockPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("清空全部记录"),
-        content: const Text("全部记录将永久删除，无法恢复！"),
+        title: const Text("清空全部记录？"),
+        content: const Text("全部记录无法恢复！建议先备份。"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() {
-                recordList.clear();
-              });
-              saveRecords();
-            },
-            child: const Text("清空全部", style: TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () {
+            recordList.clear();
+            saveRecords();
+            Navigator.pop(ctx);
+          }, child: const Text("清空", style: TextStyle(color: Colors.red))),
         ],
       ),
     );
   }
 
-  void copyOne(Map<String, dynamic> item) {
-    final dt = DateTime.parse(item["time"]);
-    String showTime =
-        "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-    String txt =
-        "日期：${item['date']}\n打卡时间：$showTime\n工地：${item['place']}\n工时：${item['hour']} h";
-    Clipboard.setData(ClipboardData(text: txt));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
+  String buildShareText() {
+    final list = getFilterRecords();
+    var sb = StringBuffer();
+    sb.writeln("===== $selectYear年$selectMonth月 记工表 ${filterPlace ?? '全部工地'} =====");
+    for (var r in list) {
+      final t = DateTime.parse(r["time"]);
+      final timeStr = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+      final settleText = (r["isSettled"] == true) ? "【已结】" : "【未结】";
+      sb.writeln("日期：${r["date"]}｜打卡：$timeStr｜工地：${r["place"]}｜工时：${r["hour"]}h｜${r["type"]}$settleText");
+    }
+    sb.writeln("\n出勤天数：$monthDays 天");
+    sb.writeln("总工时：${monthTotalHour.toStringAsFixed(2)} h");
+    sb.writeln("预估工资：${monthTotalWage.toStringAsFixed(2)} 元｜已结：${monthSettledWage.toStringAsFixed(2)}｜未结：${monthUnSettledWage.toStringAsFixed(2)} 元");
+    return sb.toString();
   }
 
-  void copyAll() {
-    final filterList = recordList.where((r) {
-      final d = DateTime.parse(r["date"]);
-      return d.year == selectYear && d.month == selectMonth;
-    }).toList();
-    String buf = "===== $selectYear年$selectMonth月 记工记录 =====\n";
-    for (var r in filterList) {
-      final dt = DateTime.parse(r["time"]);
-      String showTime =
-          "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-      buf +=
-          "日期：${r['date']}｜打卡：$showTime｜工地：${r['place']}｜工时：${r['hour']}h\n";
-    }
-    buf += "\n本月出勤天数：$monthDays 天\n总工时：${monthTotalHour.toStringAsFixed(2)} h\n预估工资：${monthTotalWage.toStringAsFixed(2)} 元";
-    Clipboard.setData(ClipboardData(text: buf));
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本月全部记录")));
+  void doShare() async {
+    final txt = buildShareText();
+    await Share.share(txt, subject: "$selectYear年$selectMonth月记工");
   }
 
-  Future<void> exportFile() async {
-    final filterList = recordList.where((r) {
-      final d = DateTime.parse(r["date"]);
-      return d.year == selectYear && d.month == selectMonth;
-    }).toList();
-    String buf = "===== $selectYear年$selectMonth月 记工记录 =====\n";
-    for (var r in filterList) {
-      final dt = DateTime.parse(r["time"]);
-      String showTime =
-          "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-      buf +=
-          "日期：${r['date']}｜打卡：$showTime｜工地：${r['place']}｜工时：${r['hour']}h\n";
-    }
-    buf += "\n本月出勤天数：$monthDays 天\n总工时：${monthTotalHour.toStringAsFixed(2)} h\n预估工资：${monthTotalWage.toStringAsFixed(2)} 元";
-    final dir = await getExternalStorageDirectory();
+  Future<void> exportSelectDir() async {
+    final txt = buildShareText();
+    final dir = await FilePicker.platform.getDirectoryPath();
     if (dir == null) return;
-    final file = File("${dir.path}/$selectYear${selectMonth.toString().padLeft(2, '0')}_记工表.txt");
-    await file.writeAsString(buf);
+    final name = "${selectYear}${selectMonth.toString().padLeft(2, '0')}_${filterPlace ?? "全部工地"}_记工.txt";
+    final f = File("$dir/$name");
+    await f.writeAsString(txt);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅ 导出成功：${file.path}")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅ 导出成功：$name")));
     }
   }
 
-  List<Map<String, dynamic>> get filterRecords {
-    return recordList.where((r) {
-      final d = DateTime.parse(r["date"]);
-      return d.year == selectYear && d.month == selectMonth;
-    }).toList();
+  // 备份全部记录json
+  Future<void> backupRecord() async {
+    final dir = await FilePicker.platform.getDirectoryPath();
+    if (dir == null) return;
+    final name = "记工备份_${DateTime.now().millisecondsSinceEpoch}.json";
+    final f = File("$dir/$name");
+    await f.writeAsString(json.encode(recordList));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅备份完成 $name")));
+    }
+  }
+
+  // 恢复备份
+  Future<void> restoreRecord() async {
+    final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ["json"]);
+    if (res == null) return;
+    final file = File(res.files.single.path!);
+    try {
+      final content = await file.readAsString();
+      final List<dynamic> importList = json.decode(content);
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("恢复备份"),
+          content: const Text("选择：覆盖现有记录 / 追加导入"),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+            TextButton(onPressed: () async {
+              recordList.clear();
+              recordList.addAll(importList.map((e) => Map<String, dynamic>.from(e)));
+              await saveRecords();
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅覆盖恢复完成")));
+              Navigator.pop(ctx);
+            }, child: const Text("覆盖")),
+            TextButton(onPressed: () async {
+              recordList.addAll(importList.map((e) => Map<String, dynamic>.from(e)));
+              await saveRecords();
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅追加导入完成")));
+              Navigator.pop(ctx);
+            }, child: const Text("追加")),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("❌备份文件读取失败")));
+    }
+  }
+
+  void openSummaryDialog() {
+    final group = getDayGroupData();
+    final placeStat = getPlaceGroupStat();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("$selectYear年$selectMonth月 ${filterPlace ?? ''} 汇总"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        Text("出勤：$monthDays 天"),
+                        Text("总工时：${monthTotalHour.toStringAsFixed(2)} h"),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        Text("总工资：${monthTotalWage.toStringAsFixed(2)}"),
+                        Text("已结：${monthSettledWage.toStringAsFixed(2)}"),
+                        Text("未结：${monthUnSettledWage.toStringAsFixed(2)}"),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              const Text("【各工地统计】", style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(
+                height: 120,
+                child: ListView(
+                  children: placeStat.entries.map((entry) {
+                    final dSet = entry.value["days"] as Set;
+                    return ListTile(
+                      dense: true,
+                      title: Text(entry.key),
+                      subtitle: Text("${dSet.length}天｜${entry.value["hour"].toStringAsFixed(2)}h｜工资${entry.value["wage"].toStringAsFixed(2)}元"),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const Divider(),
+              const Text("【按天明细】", style: TextStyle(fontWeight: FontWeight.bold)),
+              Expanded(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: group.length,
+                  itemBuilder: (dCtx, idx) {
+                    final g = group[idx];
+                    final week = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][g["dateObj"].weekday - 1];
+                    return ExpansionTile(
+                      title: Text("${g["dateStr"]} $week｜合计${g["sumHour"].toStringAsFixed(2)}h｜${g["count"]}条"),
+                      children: g["items"].map<Widget>((sub) {
+                        final dt = DateTime.parse(sub["time"]);
+                        final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                        final settleTxt = sub["isSettled"] == true ? "✅已结" : "☐未结";
+                        return ListTile(
+                          dense: true,
+                          title: Text("${sub["place"]}｜${sub["hour"]}h｜$timeStr 【${sub["type"]}】$settleTxt"),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("关闭")),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final filterList = getFilterRecords();
     return Scaffold(
       appBar: AppBar(
         title: const Text("记工打卡"),
         actions: [
-          IconButton(onPressed: copyAll, icon: const Icon(Icons.copy_all)),
-          IconButton(onPressed: exportFile, icon: const Icon(Icons.download)),
-          IconButton(onPressed: clearAll, icon: const Icon(Icons.delete_forever, color: Colors.red)),
+          IconButton(onPressed: openSummaryDialog, tooltip: "月度汇总", icon: const Icon(Icons.grid_view)),
+          IconButton(onPressed: doShare, tooltip: "分享", icon: const Icon(Icons.reply)),
+          IconButton(onPressed: exportSelectDir, tooltip: "导出TXT", icon: const Icon(Icons.arrow_downward)),
+          IconButton(onPressed: backupRecord, tooltip: "备份记录", icon: const Icon(Icons.save)),
+          IconButton(onPressed: restoreRecord, tooltip: "恢复备份", icon: const Icon(Icons.restore)),
+          IconButton(onPressed: clearAll, tooltip: "清空全部", icon: const Icon(Icons.close, color: Colors.red)),
         ],
       ),
       body: Padding(
@@ -302,8 +527,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            //年月+折叠按钮行
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 IconButton(
                   onPressed: () {
@@ -319,10 +544,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                   },
                   icon: const Icon(Icons.chevron_left),
                 ),
-                Text(
-                  "$selectYear 年 $selectMonth 月",
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
-                ),
+                Expanded(child: Text("$selectYear 年 $selectMonth 月", textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500))),
                 IconButton(
                   onPressed: () {
                     final now = DateTime.now();
@@ -339,151 +561,162 @@ class _WorkClockPageState extends State<WorkClockPage> {
                   },
                   icon: const Icon(Icons.chevron_right),
                 ),
+                IconButton(
+                  tooltip: panelExpanded ? "折叠操作区" : "展开操作区",
+                  onPressed: () {
+                    setState(() {
+                      panelExpanded = !panelExpanded;
+                    });
+                  },
+                  icon: Icon(panelExpanded ? Icons.expand_less : Icons.expand_more),
+                )
               ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Column(
-                    children: [
-                      Text(
-                        "$monthDays",
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      const Text("出勤天数"),
-                    ],
-                  ),
-                  Column(
-                    children: [
-                      Text(
-                        "${monthTotalHour.toStringAsFixed(2)} h",
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      const Text("总工时"),
-                    ],
-                  ),
-                  Column(
-                    children: [
-                      Text(
-                        "${monthTotalWage.toStringAsFixed(2)} 元",
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      const Text("预估工资"),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
+            //搜索框，永远可见
             TextField(
-              controller: wageCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => saveWage(),
-              decoration: const InputDecoration(
-                labelText: "日工价（8小时工资）",
-                hintText: "例如：260",
-                border: OutlineInputBorder(),
-              ),
+              controller: searchCtrl,
+              decoration: const InputDecoration(labelText: "搜索工地", hintText: "输入工地名称搜索", border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: placeCtrl,
-              decoration: const InputDecoration(
-                labelText: "工地/项目地点",
-                hintText: "填写工地名称",
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: hourCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: "手动打卡工时",
-                hintText: "半天填4、3.5等",
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                    onPressed: autoClock,
-                    child: const Text("自动打卡｜全天8h"),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                    onPressed: manualClock,
-                    child: const Text("手动打卡"),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              "打卡记录",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: filterRecords.isEmpty
-                  ? const Center(child: Text("本月暂无打卡记录"))
-                  : ListView.builder(
-                      itemCount: filterRecords.length,
-                      itemBuilder: (ctx, idx) {
-                        final item = filterRecords[idx];
-                        final realIndex = recordList.indexOf(item);
-                        final dt = DateTime.parse(item["time"]);
-                        String showTime =
-                            "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                        return Card(
-                          elevation: 1,
-                          margin: const EdgeInsets.symmetric(vertical: 5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height:10),
+            if (panelExpanded)
+              Expanded(
+                flex: 0,
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(14)),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("日期：${item['date']}"),
-                                      Text("打卡时刻：$showTime"),
-                                      Text("工地：${item['place']}"),
-                                      Text("工时：${item['hour']} h"),
-                                      Text(item["type"] == "auto" ? "类型：全天打卡" : "类型：零散工时"),
-                                    ],
-                                  ),
-                                ),
-                                Column(
-                                  children: [
-                                    IconButton(
-                                      onPressed: () => copyOne(item),
-                                      icon: const Icon(Icons.copy, size: 20),
-                                    ),
-                                    IconButton(
-                                      onPressed: () => editRecord(realIndex),
-                                      icon: const Icon(Icons.edit, size: 20),
-                                    ),
-                                    IconButton(
-                                      onPressed: () => deleteItem(realIndex),
-                                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                                    ),
-                                  ],
-                                )
+                                Column(children: [Text("$monthDays", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("出勤天数")]),
+                                Column(children: [Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("总工时")]),
+                                Column(children: [Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("预估工资")]),
+                              ],
+                            ),
+                            const SizedBox(height:6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                Text("已结:${monthSettledWage.toStringAsFixed(2)}"),
+                                Text("未结:${monthUnSettledWage.toStringAsFixed(2)}"),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: wageCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (_) => saveWage(),
+                        decoration: const InputDecoration(labelText: "日工价（8小时工资）", hintText: "例如：260", border: OutlineInputBorder()),
+                      ),
+                      const SizedBox(height: 10),
+                      Autocomplete<String>(
+                        optionsBuilder: (textEditingValue) {
+                          if (textEditingValue.text.isEmpty) return allPlaceList;
+                          return allPlaceList.where((s) => s.contains(textEditingValue.text));
+                        },
+                        onSelected: (v) {
+                          placeCtrl.text = v;
+                        },
+                        fieldViewBuilder: (context, ctrl, focusNode, onSubmit) {
+                          placeCtrl = ctrl;
+                          return TextField(
+                            controller: ctrl,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(labelText: "工地/项目地点", hintText: "输入，自动弹出历史工地", border: OutlineInputBorder()),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String?>(
+                        value: filterPlace,
+                        decoration: const InputDecoration(labelText: "筛选工地（只看该工地记录）", border: OutlineInputBorder()),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text("全部工地")),
+                          ...allPlaceList.map((e) => DropdownMenuItem(value: e, child: Text(e))),
+                        ],
+                        onChanged: (v) {
+                          setState(() {
+                            filterPlace = v;
+                          });
+                          calcMonthStat();
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: hourCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(labelText: "手动打卡工时", hintText: "半天填4、3.5等", border: OutlineInputBorder()),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                              onPressed: autoClock,
+                              child: const Text("自动打卡｜全天8h"),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                              onPressed: manualClock,
+                              child: const Text("手动打卡"),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
+                              onPressed: doRepairSign,
+                              child: const Text("补签"),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+            if (panelExpanded) const Text("打卡记录", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+            if (panelExpanded) const SizedBox(height: 8),
+            Expanded(
+              child: filterList.isEmpty
+                  ? const Center(child: Text("当前筛选条件下暂无打卡记录"))
+                  : ListView.builder(
+                      itemCount: filterList.length,
+                      itemBuilder: (ctx, idx) {
+                        final item = filterList[idx];
+                        final realIdx = recordList.indexOf(item);
+                        final dt = DateTime.parse(item["time"]);
+                        final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                        final settleTxt = item["isSettled"] == true ? "✅已结" : "☐未结";
+                        return ListTile(
+                          dense: true,
+                          title: Text("${item["date"]} ${item["place"]} ${item["hour"]}h $settleTxt"),
+                          subtitle: Text("$timeStr ${item["type"]}"),
+                          trailing: SizedBox(
+                            width: 120,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(onPressed: () {
+                                  Clipboard.setData(ClipboardData(text:
+                                      "日期：${item["date"]}\n打卡时刻：$timeStr\n工地：${item["place"]}\n工时：${item["hour"]} h\n类型：${item["type"]}\n结账状态：$settleTxt"));
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
+                                }, icon: const Icon(Icons.copy,size:18)),
+                                IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit,size:18)),
+                                IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete,color:Colors.red,size:18)),
                               ],
                             ),
                           ),
@@ -497,4 +730,3 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 }
-
