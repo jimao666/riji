@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:node_diary/ui/tool/work_clock_page.dart';
 
 class ToolOverviewPage extends StatelessWidget {
   const ToolOverviewPage({super.key});
@@ -15,8 +16,12 @@ class ToolOverviewPage extends StatelessWidget {
             Card(
               child: InkWell(
                 onTap: () {
-                  // TODO：后续跳转记工打卡页面
-                },
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (ctx) => const WorkClockPage()),
+  );
+},
+
                 child: const Padding(
                   padding: EdgeInsets.all(24.0),
                   child: Column(
