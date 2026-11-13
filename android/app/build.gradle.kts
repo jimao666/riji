@@ -2,20 +2,17 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android Gradle plugin.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
-
 if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
 }
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
-
 if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
@@ -24,14 +21,17 @@ val amapWebApiKey = localProperties.getProperty("amap.web.api.key", "")
 val escapedAmapWebApiKey = amapWebApiKey
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
+
 val qWeatherCredentialId = localProperties.getProperty("qweather.credential_id", "")
 val escapedQWeatherCredentialId = qWeatherCredentialId
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
+
 val qWeatherApiKey = localProperties.getProperty("qweather.api_key", "")
 val escapedQWeatherApiKey = qWeatherApiKey
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
+
 val qWeatherApiHost = localProperties.getProperty("qweather.api_host", "")
 val escapedQWeatherApiHost = qWeatherApiHost
     .replace("\\", "\\\\")
@@ -45,8 +45,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-        // flutter_local_notifications 的定时通知用到 java.time，旧系统要靠
-        // 脱糖库补上。
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -60,6 +58,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
         buildConfigField("String", "AMAP_WEB_API_KEY", "\"$escapedAmapWebApiKey\"")
         buildConfigField("String", "QWEATHER_CREDENTIAL_ID", "\"$escapedQWeatherCredentialId\"")
         buildConfigField("String", "QWEATHER_API_KEY", "\"$escapedQWeatherApiKey\"")
@@ -68,30 +67,28 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
-            storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-            storePassword = keystoreProperties.getProperty("storePassword")
-            // minSdk ≥ 24 时 AGP 默认只签 v2、不签 v1，但鸿蒙与部分华为机型的
-            // 安装器只认 META-INF 里的 v1 证书，缺了就报“该安装包未包含任何证书”。
-            // 显式打开三种方案；证书不变，已安装的版本照常覆盖升级。
-            enableV1Signing = true
-            enableV2Signing = true
-            enableV3Signing = true
+            // 仅本地存在 key.properties 才加载签名，CI无此文件则跳过，不会报 null File 错误
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
-            // Flutter 插件已经开启 R8 并带上默认规则；应用自己的规则显式登记在这里，
-            // 不依赖插件对同名文件的隐式回落。
+            // CI环境取消强制签名，输出未签名包，后续MT管理器签名
+            // signingConfig = signingConfigs.getByName("release")
             proguardFiles("proguard-rules.pro")
         }
         getByName("profile") {
-            // A profile install must retain the installed release package's
-            // signer, or Android rejects the replacement before touching data.
-            signingConfig = signingConfigs.getByName("release")
+            // profile 同样取消绑定release签名
+            // signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -108,9 +105,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    // 存储管理的视频压缩（DiaryVideoTools）。版本与 video_player_android 带进来的
-    // Media3（ExoPlayer）保持一致：不同版本会被 Gradle 统一升到较高的那个，
-    // 连带改变视频播放器的实现。升级 video_player 时一并核对。
     implementation("androidx.media3:media3-transformer:1.9.2")
     implementation("androidx.media3:media3-effect:1.9.2")
     implementation("androidx.media3:media3-common:1.9.2")
