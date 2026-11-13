@@ -759,15 +759,19 @@ class _HomePageState extends ConsumerState<HomePage> {
       return;
     }
     switch (_effectiveTab) {
-      case HomeTab.diaries:
-        await _openCreate();
-      case HomeTab.todos:
-        await _todosCreateAction?.call();
-      case HomeTab.calendar || HomeTab.explore:
-        return;
-    }
+  case HomeTab.diaries:
+    await _openCreate();
+    break;
+  case HomeTab.todos:
+    await _todosCreateAction?.call();
+    break;
+  case HomeTab.calendar:
+  case HomeTab.explore:
+    return;
+  case HomeTab.tool:
+    return;
+}
   }
-
   /// 新建日记：优先交给日记页（它知道当前所在的日记本与章节）。侧边栏
   /// 按钮与快捷键在任何 Tab 都直接走这里——日记页被保活，不在可见 Tab
   /// 时它注册的入口照样可用。
