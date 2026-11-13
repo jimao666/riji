@@ -4,6 +4,10 @@
   "@appTitle": {
     "description": "Auto-generated metadata for appTitle."
   },
+"navTool": "工具",
+"@navTool": {
+  "description": "底部导航：工具"
+},
   "navDiaries": "日记",
   "@navDiaries": {
     "description": "Auto-generated metadata for navDiaries."
