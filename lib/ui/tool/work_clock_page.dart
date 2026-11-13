@@ -706,12 +706,15 @@ class _WorkClockPageState extends State<WorkClockPage> {
                         onSelected: (v) {
                           placeCtrl.text = v;
                         },
-                        fieldViewBuilder: (context, ctrl, focusNode, onSubmit) {
-                          placeCtrl = ctrl;
+                        fieldViewBuilder: (context, _, focusNode, onSubmit) {
                           return TextField(
-                            controller: ctrl,
+                            controller: placeCtrl,
                             focusNode: focusNode,
-                            decoration: const InputDecoration(labelText: "工地/项目地点", hintText: "输入，自动弹出历史工地", border: OutlineInputBorder()),
+                            decoration: const InputDecoration(
+                              labelText: "工地/项目地点",
+                              hintText: "输入，自动弹出历史工地",
+                              border: OutlineInputBorder(),
+                            ),
                           );
                         },
                       ),
