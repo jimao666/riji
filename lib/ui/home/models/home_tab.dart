@@ -37,7 +37,7 @@ enum HomeTab {
     HomeTab.todos => FontAwesomeIcons.solidSquareCheck,
     HomeTab.calendar => FontAwesomeIcons.solidCalendar,
     HomeTab.explore => FontAwesomeIcons.solidCompass,
-    HomeTab.tool => FontAwesomeIcons.solidScrewdriverWrench,
+    HomeTab.tool => FontAwesomeIcons.solidWrench,
   };
 
   /// 是否有首页的“新建”FAB（玻璃底栏时为并排按钮）：日记页新建日记，
