@@ -15,7 +15,6 @@ class WorkClockPage extends StatefulWidget {
 
 class _WorkClockPageState extends State<WorkClockPage> {
   List<Map<String, dynamic>> recordList = [];
-  bool panelExpanded = true;
   int monthDays = 0;
   double monthTotalHour = 0.0;
   double monthTotalWage = 0.0;
@@ -27,8 +26,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
   String? filterPlace;
   String searchText = "";
   List<String> allPlaceList = [];
+  bool foldBelowCalendar = false; // 控制：日历下方全部折叠，只保留打卡记录
 
-  // 页面常驻：日工价
   final TextEditingController wageCtrl = TextEditingController();
 
   @override
@@ -75,11 +74,11 @@ class _WorkClockPageState extends State<WorkClockPage> {
     double totalH = 0;
     double settled = 0;
     double unSettled = 0;
-    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
     for (var r in list) {
       final d = DateTime.parse(r["date"]);
       daySet.add("${d.year}-${d.month}-${d.day}");
       final h = double.tryParse(r["hour"]) ?? 0;
+      final dayWage = double.tryParse(r["dayWage"] ?? "0") ?? 0;
       final w = h / 8 * dayWage;
       totalH += h;
       if (r["isSettled"] == true) {
@@ -321,80 +320,110 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 
-  // Table 版本稳定日历，修复空白
+  // 和showDatePicker风格一致的日历
   Widget buildCalendar() {
-    final now = DateTime(selectYear, selectMonth);
-    final firstDay = DateTime(selectYear, selectMonth, 1);
-    final firstWeekDay = firstDay.weekday;
-    final daysInMonth = DateTime(selectYear, selectMonth + 1, 0).day;
-    final hasDaySet = getHasClockDaySet();
+    final DateTime firstDayOfMonth = DateTime(selectYear, selectMonth, 1);
+    final int firstWeekday = firstDayOfMonth.weekday;
+    final int daysCount = DateTime(selectYear, selectMonth + 1, 0).day;
+    final Set<String> clockDays = getHasClockDaySet();
 
-    List<TableRow> rows = [];
-    // 表头
-    rows.add(TableRow(children: const [
-      Center(child: Text("一")),
-      Center(child: Text("二")),
-      Center(child: Text("三")),
-      Center(child: Text("四")),
-      Center(child: Text("五")),
-      Center(child: Text("六")),
-      Center(child: Text("日")),
-    ]));
-
-    List<Widget> week = [];
-    // 前面空白占位
-    for (int i = 1; i < firstWeekDay; i++) {
-      week.add(const SizedBox());
+    List<Widget> dayItems = [];
+    for (int i = 1; i < firstWeekday; i++) {
+      dayItems.add(const SizedBox.shrink());
     }
-    for (int d = 1; d <= daysInMonth; d++) {
-      final dateStr = "$selectYear-${selectMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
-      final isSelected = selectedDay?.year == selectYear && selectedDay?.month == selectMonth && selectedDay?.day == d;
-      final hasRecord = hasDaySet.contains(dateStr);
-      week.add(
+    for (int d = 1; d <= daysCount; d++) {
+      final dateKey = "$selectYear-${selectMonth.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}";
+      final bool selected = selectedDay?.year == selectYear && selectedDay?.month == selectMonth && selectedDay?.day == d;
+      final bool hasRecord = clockDays.contains(dateKey);
+      dayItems.add(
         InkWell(
           onTap: () {
             setState(() {
               selectedDay = DateTime(selectYear, selectMonth, d);
             });
           },
+          borderRadius: BorderRadius.circular(24),
           child: Container(
-            margin: const EdgeInsets.all(2),
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF00798C) : (hasRecord ? Colors.green.shade200 : Colors.transparent),
-              borderRadius: BorderRadius.circular(8),
+              color: selected
+                  ? Theme.of(context).primaryColor
+                  : hasRecord
+                      ? Colors.green.shade100
+                      : Colors.transparent,
+              shape: BoxShape.circle,
             ),
-            child: Center(
-              child: Text(
-                "$d",
-                style: TextStyle(color: isSelected ? Colors.white : Colors.black87),
-              ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Text(
+                  "$d",
+                  style: TextStyle(color: selected ? Colors.white : Colors.black87, fontSize: 14),
+                ),
+                if (hasRecord && !selected)
+                  const Positioned(bottom: 0, child: Icon(Icons.check, size: 8, color: Colors.green)),
+              ],
             ),
           ),
         ),
       );
-      if (week.length == 7) {
-        rows.add(TableRow(children: week));
-        week = [];
-      }
     }
-    // 末尾补齐空格子
-    while (week.length < 7) {
-      week.add(const SizedBox());
+    while (dayItems.length % 7 != 0) {
+      dayItems.add(const SizedBox.shrink());
     }
-    if (week.isNotEmpty) rows.add(TableRow(children: week));
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
-      ),
-      child: Table(
-        border: const TableBorder(horizontalInside: BorderSide(color: Colors.black12)),
-        children: rows,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    if (selectMonth == 1) {
+                      selectYear--;
+                      selectMonth = 12;
+                    } else {
+                      selectMonth--;
+                    }
+                  });
+                },
+                icon: const Icon(Icons.chevron_left),
+              ),
+              Text("$selectYear 年 $selectMonth 月", style: const TextStyle(fontWeight: FontWeight.w600)),
+              IconButton(
+                onPressed: () {
+                  setState(() {
+                    if (selectMonth == 12) {
+                      selectYear++;
+                      selectMonth = 1;
+                    } else {
+                      selectMonth++;
+                    }
+                  });
+                },
+                icon: const Icon(Icons.chevron_right),
+              ),
+            ],
+          ),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Text("一"), Text("二"), Text("三"), Text("四"), Text("五"), Text("六"), Text("日"),
+            ],
+          ),
+          const SizedBox(height: 4),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 7,
+            children: dayItems,
+          ),
+        ],
       ),
     );
   }
@@ -415,56 +444,89 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 setState(() {});
               },
             ),
-            const SizedBox(height:12),
+            const SizedBox(height: 12),
             buildCalendar(),
-            const SizedBox(height:12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.lightBlue.shade50, borderRadius: BorderRadius.circular(16)),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Column(children:[Text("$monthDays",style:const TextStyle(fontSize:32,fontWeight:FontWeight.bold)),const Text("出勤天数")]),
-                      Column(children:[Text("${monthTotalHour.toStringAsFixed(2)} h",style:const TextStyle(fontSize:32,fontWeight:FontWeight.bold)),const Text("总工时")]),
-                      Column(children:[Text("${monthTotalWage.toStringAsFixed(2)} 元",style:const TextStyle(fontSize:32,fontWeight:FontWeight.bold)),const Text("预估工资")]),
-                    ],
-                  ),
-                  const SizedBox(height:6),
-                  Text("已结:${monthSettledWage.toStringAsFixed(2)}    未结:${monthUnSettledWage.toStringAsFixed(2)}"),
-                ],
-              ),
-            ),
-            const SizedBox(height:12),
-            TextField(
-              controller: wageCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal:true),
-              decoration: const InputDecoration(labelText:"日工价（8小时工资）"),
-              onChanged: (_)=>calcMonthStat(),
-            ),
-            const SizedBox(height:20),
+            const SizedBox(height: 8),
+
+            // 折叠按钮放在汇总右上角，点它：日历下面全部折叠，只留打卡记录
             Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Expanded(child:ElevatedButton(onPressed:autoClock,child:const Text("自动打卡 8H"))),
-                const SizedBox(width:8),
-                Expanded(child:ElevatedButton(onPressed:manualClock,child:const Text("手动打卡"))),
-                const SizedBox(width:8),
-                Expanded(child:ElevatedButton(onPressed:doRepairSign,child:const Text("补签"))),
-                const SizedBox(width:6),
-                ElevatedButton(onPressed:openFilterDialog,style:ElevatedButton.styleFrom(padding:const EdgeInsets.symmetric(horizontal:8)),child:const Text("筛选")),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () {
+                    setState(() {
+                      foldBelowCalendar = !foldBelowCalendar;
+                    });
+                  },
+                  icon: Icon(foldBelowCalendar ? Icons.expand_more : Icons.expand_less),
+                ),
               ],
             ),
-            const SizedBox(height:20),
-            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录"),
-            const SizedBox(height:8),
-            ...getDayRecords(selectedDay!).map((item)=>Card(
-              child:ListTile(
-                title:Text(item["place"]),
-                subtitle:Text("${item["type"]} | 工时：${item["hour"]}h | 日工价：${item["dayWage"]}"),
+
+            if (!foldBelowCalendar)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: Colors.lightBlue.shade50, borderRadius: BorderRadius.circular(16)),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            Column(children: [
+                              Text("$monthDays", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                              const Text("出勤天数")
+                            ]),
+                            Column(children: [
+                              Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                              const Text("总工时")
+                            ]),
+                            Column(children: [
+                              Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                              const Text("预估工资")
+                            ]),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text("已结:${monthSettledWage.toStringAsFixed(2)}    未结:${monthUnSettledWage.toStringAsFixed(2)}"),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: wageCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: "日工价（8小时工资）"),
+                    onChanged: (_) => calcMonthStat(),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(child: ElevatedButton(onPressed: autoClock, child: const Text("自动打卡 8H"))),
+                      const SizedBox(width: 6),
+                      Expanded(child: ElevatedButton(onPressed: manualClock, child: const Text("手动打卡"))),
+                      const SizedBox(width: 6),
+                      Expanded(child: ElevatedButton(onPressed: doRepairSign, child: const Text("补签"))),
+                      const SizedBox(width: 6),
+                      Expanded(child: ElevatedButton(onPressed: openFilterDialog, child: const Text("筛选"))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
-            ))
+
+            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录"),
+            const SizedBox(height: 8),
+            ...getDayRecords(selectedDay!).map((item) => Card(
+              child: ListTile(
+                title: Text(item["place"]),
+                subtitle: Text("${item["type"]} | 工时：${item["hour"]}h | 日工价：${item["dayWage"]}"),
+              ),
+            )).toList(),
           ],
         ),
       ),
