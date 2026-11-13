@@ -25,8 +25,8 @@ class AboutPage extends ConsumerStatefulWidget {
   static const String _appName = 'Jotsy';
   static const String _appIconAssetPath = 'assets/app_icon/mingcute_icon.png';
   static const String _repoUrl = 'https://github.com/CikeSeven/jotsy';
-  static const String _issueUrl = 'https://github.com/CikeSeven/jotsy/issues';
-  static const String _qqFeedbackGroupNumber = '678136434';
+  static const String _issueUrl = 'https://mha.ct.ws';
+  static const String _qqFeedbackGroupNumber = '904154681';
 
   static Future<String> _loadAppVersion() async {
     final info = await PackageInfo.fromPlatform();
