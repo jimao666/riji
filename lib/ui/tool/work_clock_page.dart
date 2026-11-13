@@ -397,6 +397,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text("$selectYear年$selectMonth月 ${filterPlace ?? ''} 汇总"),
+        scrollable: true,
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -442,9 +443,10 @@ class _WorkClockPageState extends State<WorkClockPage> {
               ),
               const Divider(),
               const Text("【按天明细】", style: TextStyle(fontWeight: FontWeight.bold)),
-              Expanded(
+              SizedBox(
+                height: 220,
                 child: ListView.builder(
-                  shrinkWrap: true,
+                  shrinkWrap: false,
                   itemCount: group.length,
                   itemBuilder: (dCtx, idx) {
                     final g = group[idx];
@@ -455,9 +457,32 @@ class _WorkClockPageState extends State<WorkClockPage> {
                         final dt = DateTime.parse(sub["time"]);
                         final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
                         final settleTxt = sub["isSettled"] == true ? "✅已结" : "☐未结";
+                        int realIndex = recordList.indexOf(sub);
                         return ListTile(
                           dense: true,
                           title: Text("${sub["place"]}｜${sub["hour"]}h｜$timeStr 【${sub["type"]}】$settleTxt"),
+                          trailing: SizedBox(
+                            width: 100,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    editRecord(realIndex);
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_forever, size: 18, color: Colors.red),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    deleteRecord(realIndex);
+                                  },
+                                )
+                              ],
+                            ),
+                          ),
                         );
                       }).toList(),
                     );
@@ -468,6 +493,28 @@ class _WorkClockPageState extends State<WorkClockPage> {
           ),
         ),
         actions: [
+          IconButton(onPressed: doShare, icon: const Icon(Icons.share), tooltip: "分享"),
+          IconButton(onPressed: exportSelectDir, icon: const Icon(Icons.file_download), tooltip: "导出TXT"),
+          IconButton(onPressed: backupRecord, icon: const Icon(Icons.save_alt), tooltip: "备份"),
+          IconButton(onPressed: restoreRecord, icon: const Icon(Icons.settings_backup_restore), tooltip: "恢复"),
+          IconButton(
+            onPressed: () {
+              showDialog(context: context, builder: (cctx) => AlertDialog(
+                title: const Text("确认清空全部记录？"),
+                content: const Text("记录将全部删除，建议先备份！"),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(cctx), child: const Text("取消")),
+                  TextButton(onPressed: () {
+                    Navigator.pop(cctx);
+                    Navigator.pop(ctx);
+                    clearAll();
+                  }, style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text("确认清空"))
+                ],
+              ));
+            },
+            icon: const Icon(Icons.delete_forever, color: Colors.red),
+            tooltip: "清空全部",
+          ),
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("关闭")),
         ],
       ),
@@ -527,20 +574,28 @@ class _WorkClockPageState extends State<WorkClockPage> {
     final todayStr = "${today.year}-${today.month}-${today.day}";
     List<Widget> cells = [];
     const weekTitles = ["一", "二", "三", "四", "五", "六", "日"];
+
     for (var w in weekTitles) {
       cells.add(
-        Expanded(child: Center(child: Text(w, style: const TextStyle(fontWeight: FontWeight.w500)))),
+        Expanded(
+          child: Center(
+            child: Text(w, style: const TextStyle(fontSize: 14, color: Colors.black87)),
+          ),
+        ),
       );
     }
+
     for (int i = 1; i < firstWeekDay; i++) {
       cells.add(const Expanded(child: SizedBox()));
     }
+
     for (int d = 1; d <= daysInMonth; d++) {
       final dayDt = DateTime(selectYear, selectMonth, d);
       final dayKey = "${selectYear}-${selectMonth}-$d";
       final isClock = hasClockDays.contains(dayKey);
       final isSelected = selectedDay?.year == selectYear && selectedDay?.month == selectMonth && selectedDay?.day == d;
       final isToday = dayKey == todayStr;
+
       cells.add(
         Expanded(
           child: InkWell(
@@ -549,41 +604,63 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 selectedDay = dayDt;
               });
             },
-            child: Container(
-              margin: const EdgeInsets.all(2),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.blue
-                    : isClock
-                        ? Colors.green.shade200
-                        : isToday
-                            ? Colors.blue.shade100
-                            : null,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                "$d",
-                style: TextStyle(
-                  color: isSelected ? Colors.white : null,
-                  fontWeight: isClock ? FontWeight.bold : FontWeight.normal,
-                ),
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF00798C)
+                          : isClock
+                              ? Colors.green.shade200
+                              : isToday
+                                  ? Colors.blue.shade100
+                                  : null,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      "$d",
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isSelected ? Colors.white : Colors.black87,
+                        fontWeight: isClock ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text("", style: TextStyle(fontSize: 10, color: Colors.grey))
+                ],
               ),
             ),
           ),
         ),
       );
     }
-    return Column(
-      children: [
-        GridView.count(
-          shrinkWrap: true,
-          crossAxisCount: 7,
-          physics: const NeverScrollableScrollPhysics(),
-          children: cells,
-        ),
-      ],
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          )
+        ],
+      ),
+      child: GridView.count(
+        shrinkWrap: true,
+        crossAxisCount: 7,
+        physics: const NeverScrollableScrollPhysics(),
+        children: cells,
+      ),
     );
   }
 
@@ -594,15 +671,14 @@ class _WorkClockPageState extends State<WorkClockPage> {
       appBar: AppBar(
         title: const Text("记工打卡"),
         actions: [
-          IconButton(onPressed: openSummaryDialog, tooltip: "月度汇总", icon: const Icon(Icons.grid_view)),
-          IconButton(onPressed: doShare, tooltip: "分享", icon: const Icon(Icons.reply)),
-          IconButton(onPressed: exportSelectDir, tooltip: "导出TXT", icon: const Icon(Icons.arrow_downward)),
-          IconButton(onPressed: backupRecord, tooltip: "备份记录", icon: const Icon(Icons.save)),
-          IconButton(onPressed: restoreRecord, tooltip: "恢复备份", icon: const Icon(Icons.restore)),
-          IconButton(onPressed: clearAll, tooltip: "清空全部", icon: const Icon(Icons.close, color: Colors.red)),
+          IconButton(
+            onPressed: openSummaryDialog,
+            tooltip: "月度汇总",
+            icon: const Icon(Icons.calendar_view_month),
+          ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -641,141 +717,139 @@ class _WorkClockPageState extends State<WorkClockPage> {
                   icon: const Icon(Icons.chevron_right),
                 ),
                 IconButton(
-                  tooltip: panelExpanded ? "折叠操作区" : "展开操作区",
+                  tooltip: panelExpanded ? "折叠面板" : "展开面板",
                   onPressed: () {
                     setState(() {
                       panelExpanded = !panelExpanded;
                     });
                   },
-                  icon: Icon(panelExpanded ? Icons.expand_less : Icons.expand_more),
+                  icon: Icon(panelExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
                 )
               ],
             ),
-            buildCalendarGrid(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             TextField(
               controller: searchCtrl,
-              decoration: const InputDecoration(labelText: "搜索工地", hintText: "输入工地名称搜索", border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
+              decoration: const InputDecoration(
+                labelText: "搜索工地",
+                hintText: "输入工地名称搜索",
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+              ),
             ),
-            const SizedBox(height: 10),
-            if (panelExpanded)
-              SizedBox(
-                height: 360,
-                child: SingleChildScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(14)),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                Column(children: [Text("$monthDays", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("出勤天数")]),
-                                Column(children: [Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("总工时")]),
-                                Column(children: [Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("预估工资")]),
-                              ],
-                            ),
-                            const SizedBox(height:6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                Text("已结:${monthSettledWage.toStringAsFixed(2)}"),
-                                Text("未结:${monthUnSettledWage.toStringAsFixed(2)}"),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: wageCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (_) => saveWage(),
-                        decoration: const InputDecoration(labelText: "日工价（8小时工资）", hintText: "例如：260", border: OutlineInputBorder()),
-                      ),
-                      const SizedBox(height: 10),
-                      Autocomplete<String>(
-                        optionsBuilder: (textEditingValue) {
-                          if (textEditingValue.text.isEmpty) return allPlaceList;
-                          return allPlaceList.where((s) => s.contains(textEditingValue.text));
-                        },
-                        onSelected: (v) {
-                          placeCtrl.text = v;
-                        },
-                        fieldViewBuilder: (context, _, focusNode, onSubmit) {
-                          return TextField(
-                            controller: placeCtrl,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              labelText: "工地/项目地点",
-                              hintText: "输入，自动弹出历史工地",
-                              border: OutlineInputBorder(),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String?>(
-                        value: filterPlace,
-                        decoration: const InputDecoration(labelText: "筛选工地（只看该工地记录）", border: OutlineInputBorder()),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text("全部工地")),
-                          ...allPlaceList.map((e) => DropdownMenuItem(value: e, child: Text(e))),
-                        ],
-                        onChanged: (v) {
-                          setState(() {
-                            filterPlace = v;
-                          });
-                          calcMonthStat();
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: hourCtrl,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(labelText: "手动打卡工时", hintText: "半天填4、3.5等", border: OutlineInputBorder()),
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                              onPressed: autoClock,
-                              child: const Text("自动打卡｜全天8h"),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                              onPressed: manualClock,
-                              child: const Text("手动打卡"),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
-                              onPressed: doRepairSign,
-                              child: const Text("补签"),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
+            const SizedBox(height: 12),
+
+            if (panelExpanded) ...[
+              buildCalendarGrid(),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(14)),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Column(children: [Text("$monthDays", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("出勤天数")]),
+                        Column(children: [Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("总工时")]),
+                        Column(children: [Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("预估工资")]),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Text("已结:${monthSettledWage.toStringAsFixed(2)}"),
+                        Text("未结:${monthUnSettledWage.toStringAsFixed(2)}"),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            const SizedBox(height:8),
+              const SizedBox(height: 14),
+              TextField(
+                controller: wageCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => saveWage(),
+                decoration: const InputDecoration(labelText: "日工价（8小时工资）", hintText: "例如：260", border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              Autocomplete<String>(
+                optionsBuilder: (textEditingValue) {
+                  if (textEditingValue.text.isEmpty) return allPlaceList;
+                  return allPlaceList.where((s) => s.contains(textEditingValue.text));
+                },
+                onSelected: (v) {
+                  placeCtrl.text = v;
+                },
+                fieldViewBuilder: (context, _, focusNode, onSubmit) {
+                  return TextField(
+                    controller: placeCtrl,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(
+                      labelText: "工地/项目地点",
+                      hintText: "输入，自动弹出历史工地",
+                      border: OutlineInputBorder(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String?>(
+                value: filterPlace,
+                decoration: const InputDecoration(labelText: "筛选工地（只看该工地记录）", border: OutlineInputBorder()),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text("全部工地")),
+                  ...allPlaceList.map((e) => DropdownMenuItem(value: e, child: Text(e))),
+                ],
+                onChanged: (v) {
+                  setState(() {
+                    filterPlace = v;
+                  });
+                  calcMonthStat();
+                },
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: hourCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: "手动打卡工时", hintText: "半天填4、3.5等", border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      onPressed: autoClock,
+                      child: const Text("自动打卡｜全天8h"),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      onPressed: manualClock,
+                      child: const Text("手动打卡"),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
+                      onPressed: doRepairSign,
+                      child: const Text("补签"),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+
             Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
-            Expanded(
+            SizedBox(
+              height: 260,
               child: dayRecords.isEmpty
                   ? const Center(child: Text("这一天没有打卡记录"))
                   : ListView.builder(
@@ -799,9 +873,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
                                   Clipboard.setData(ClipboardData(text:
                                       "日期：${item["date"]}\n打卡时刻：$timeStr\n工地：${item["place"]}\n工时：${item["hour"]} h\n类型：${item["type"]}\n结账状态：$settleTxt"));
                                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
-                                }, icon: const Icon(Icons.copy,size:18)),
-                                IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit,size:18)),
-                                IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete,color:Colors.red,size:18)),
+                                }, icon: const Icon(Icons.copy, size: 18)),
+                                IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit, size: 18)),
+                                IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18)),
                               ],
                             ),
                           ),
@@ -809,6 +883,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       },
                     ),
             ),
+            const SizedBox(height: 30),
           ],
         ),
       ),
