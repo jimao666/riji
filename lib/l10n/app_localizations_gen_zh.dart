@@ -12,7 +12,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appTitle => '王记';
 
   @override
-  String get tool => '工具';
+  String get navTool => '工具';
 
   @override
   String get navDiaries => '日记';
