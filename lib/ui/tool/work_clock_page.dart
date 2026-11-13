@@ -93,6 +93,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
 
   void calcMonthStat() {
     final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    if (dayWage > 99999) return;
     final list = getFilterRecords();
     final daySet = <String>{};
     double totalH = 0;
@@ -101,9 +102,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
     for (var r in list) {
       final d = DateTime.parse(r["date"]);
       daySet.add("${d.year}-${d.month}-${d.day}");
-      final h = double.parse(r["hour"]);
-      final w = h / 8 * dayWage;
+      final h = double.tryParse(r["hour"]) ?? 0;
       totalH += h;
+      final w = h / 8 * dayWage;
       if (r["isSettled"] == true) {
         settled += w;
       } else {
@@ -415,12 +416,13 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing:16,
                       children: [
-                        Text("总工资：${monthTotalWage.toStringAsFixed(2)}"),
-                        Text("已结：${monthSettledWage.toStringAsFixed(2)}"),
-                        Text("未结：${monthUnSettledWage.toStringAsFixed(2)}"),
+                        Text("总工资：${monthTotalWage.toStringAsFixed(2)} 元"),
+                        Text("已结：${monthSettledWage.toStringAsFixed(2)} 元"),
+                        Text("未结：${monthUnSettledWage.toStringAsFixed(2)} 元"),
                       ],
                     ),
                   ],
@@ -551,11 +553,12 @@ class _WorkClockPageState extends State<WorkClockPage> {
   Map<String, Map<String, dynamic>> _groupByPlace() {
     final filter = getFilterRecords();
     final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    if(dayWage>99999) return {};
     final Map<String, Map<String, dynamic>> placeStat = {};
     for (var r in filter) {
       final p = r["place"].toString();
       final dStr = r["date"].toString();
-      final h = double.parse(r["hour"]);
+      final h = double.tryParse(r["hour"])??0;
       final w = h / 8 * dayWage;
       placeStat.putIfAbsent(p, () => {"days": <String>{}, "hour": 0.0, "wage": 0.0});
       placeStat[p]!["days"].add(dStr);
@@ -640,26 +643,29 @@ class _WorkClockPageState extends State<WorkClockPage> {
         ),
       );
     }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          )
-        ],
-      ),
-      child: GridView.count(
-        shrinkWrap: true,
-        crossAxisCount: 7,
-        physics: const NeverScrollableScrollPhysics(),
-        children: cells,
+    // 给日历固定最大高度约束，解决SingleChildScrollView里面消失不显示
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 180, minHeight:160),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            )
+          ],
+        ),
+        child: GridView.count(
+          shrinkWrap: true,
+          crossAxisCount: 7,
+          physics: const NeverScrollableScrollPhysics(),
+          children: cells,
+        ),
       ),
     );
   }
@@ -756,8 +762,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing:16,
                       children: [
                         Text("已结:${monthSettledWage.toStringAsFixed(2)}"),
                         Text("未结:${monthUnSettledWage.toStringAsFixed(2)}"),
@@ -770,8 +777,21 @@ class _WorkClockPageState extends State<WorkClockPage> {
               TextField(
                 controller: wageCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                onChanged: (_) => saveWage(),
-                decoration: const InputDecoration(labelText: "日工价（8小时工资）", hintText: "例如：260", border: OutlineInputBorder()),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                ],
+                onChanged: (val) {
+                  final num = double.tryParse(val);
+                  if(num == null || num <=0 || num > 99999){
+                    return;
+                  }
+                  saveWage();
+                },
+                decoration: const InputDecoration(
+                    labelText: "日工价（8小时工资）",
+                    hintText: "例如：260，上限99999",
+                    border: OutlineInputBorder()
+                ),
               ),
               const SizedBox(height: 10),
               Autocomplete<String>(
@@ -822,7 +842,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
                       onPressed: autoClock,
-                      child: const Text("自动打卡｜全天8h"),
+                      // 修改：文字缩短，单行显示
+                      child: const Text("自动打卡 8H",maxLines:1,overflow:TextOverflow.ellipsis),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -830,7 +851,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
                       onPressed: manualClock,
-                      child: const Text("手动打卡"),
+                      child: const Text("手动打卡",maxLines:1),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -838,7 +859,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
                       onPressed: doRepairSign,
-                      child: const Text("补签"),
+                      child: const Text("补签",maxLines:1),
                     ),
                   ),
                 ],
@@ -848,41 +869,41 @@ class _WorkClockPageState extends State<WorkClockPage> {
 
             Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
-            SizedBox(
-              height: 260,
-              child: dayRecords.isEmpty
-                  ? const Center(child: Text("这一天没有打卡记录"))
-                  : ListView.builder(
-                      itemCount: dayRecords.length,
-                      itemBuilder: (ctx, idx) {
-                        final item = dayRecords[idx];
-                        final realIdx = recordList.indexOf(item);
-                        final dt = DateTime.parse(item["time"]);
-                        final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                        final settleTxt = item["isSettled"] == true ? "✅已结" : "☐未结";
-                        return ListTile(
-                          dense: true,
-                          title: Text("${item["place"]} ${item["hour"]}h $settleTxt"),
-                          subtitle: Text("$timeStr ${item["type"]}"),
-                          trailing: SizedBox(
-                            width: 120,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(onPressed: () {
-                                  Clipboard.setData(ClipboardData(text:
-                                      "日期：${item["date"]}\n打卡时刻：$timeStr\n工地：${item["place"]}\n工时：${item["hour"]} h\n类型：${item["type"]}\n结账状态：$settleTxt"));
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
-                                }, icon: const Icon(Icons.copy, size: 18)),
-                                IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit, size: 18)),
-                                IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18)),
-                              ],
-                            ),
+            // 删除固定高度SizedBox，改用shrinkWrap，适应内容大小
+            dayRecords.isEmpty
+                ? const Padding(padding:EdgeInsets.symmetric(vertical:40),child:Center(child: Text("这一天没有打卡记录")))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: dayRecords.length,
+                    itemBuilder: (ctx, idx) {
+                      final item = dayRecords[idx];
+                      final realIdx = recordList.indexOf(item);
+                      final dt = DateTime.parse(item["time"]);
+                      final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                      final settleTxt = item["isSettled"] == true ? "✅已结" : "☐未结";
+                      return ListTile(
+                        dense: true,
+                        title: Text("${item["place"]} ${item["hour"]}h $settleTxt"),
+                        subtitle: Text("$timeStr ${item["type"]}"),
+                        trailing: SizedBox(
+                          width: 120,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(onPressed: () {
+                                Clipboard.setData(ClipboardData(text:
+                                    "日期：${item["date"]}\n打卡时刻：$timeStr\n工地：${item["place"]}\n工时：${item["hour"]} h\n类型：${item["type"]}\n结账状态：$settleTxt"));
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
+                              }, icon: const Icon(Icons.copy, size: 18)),
+                              IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit, size: 18)),
+                              IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18)),
+                            ],
                           ),
-                        );
-                      },
-                    ),
-            ),
+                        ),
+                      );
+                    },
+                  ),
             const SizedBox(height: 30),
           ],
         ),
