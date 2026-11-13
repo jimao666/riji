@@ -21,6 +21,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
   final TextEditingController _wageCtrl = TextEditingController();
 
   List<Map<String, dynamic>> workList = [];
+  String selectedSite = "全部工地";
+  List<String> siteList = ["全部工地"];
 
   @override
   void initState() {
@@ -30,11 +32,35 @@ class _WorkClockPageState extends State<WorkClockPage> {
   }
 
   Future<void> loadWorkData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString("work_record");
+    if (raw != null) {
+      final List list = json.decode(raw);
+      workList = list.cast<Map<String, dynamic>>();
+    }
+    // 提取所有工地名称，去重
+    Set<String> sites = {};
+    for(var item in workList){
+      if(item["place"] != null && item["place"].toString().trim().isNotEmpty){
+        sites.add(item["place"].toString().trim());
+      }
+    }
+    siteList = ["全部工地", ...sites];
     setState(() {});
   }
 
+  Future<void> saveWorkData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("work_record", json.encode(workList));
+  }
+
   Widget buildCalendarGrid() {
-    bool hasClock = workList.any((item) {
+    // 筛选之后再判断是否打卡
+    var filterList = workList;
+    if(selectedSite != "全部工地"){
+      filterList = workList.where((item)=>item["place"] == selectedSite).toList();
+    }
+    bool hasClock = filterList.any((item) {
       DateTime itemDate = DateTime.parse(item["date"]);
       return itemDate.year == selectedDay!.year &&
           itemDate.month == selectedDay!.month &&
@@ -90,9 +116,88 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 
+  // 统计，带上工地筛选
+  Map<String, dynamic> calcStat() {
+    int days = 0;
+    double hours = 0;
+    double money = 0;
+    final double wage = double.tryParse(_wageCtrl.text) ?? 0;
+
+    var filterList = workList;
+    if(selectedSite != "全部工地"){
+      filterList = workList.where((item)=>item["place"] == selectedSite).toList();
+    }
+
+    for (var item in filterList) {
+      final d = DateTime.parse(item["date"]);
+      if (d.year == selectedDay!.year && d.month == selectedDay!.month) {
+        days++;
+        final h = double.tryParse(item["hour"].toString()) ?? 0;
+        hours += h;
+        if (wage > 0) {
+          money += h / 8 * wage;
+        }
+      }
+    }
+    return {"days": days, "hours": hours, "money": money};
+  }
+
+  void doAutoClock() {
+    String placeName = _workNameCtrl.text.trim();
+    if(placeName.isEmpty){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请先填写工地/项目地点！")));
+      return;
+    }
+    final dateStr =
+        "${selectedDay!.year}-${selectedDay!.month.toString().padLeft(2, '0')}-${selectedDay!.day.toString().padLeft(2, '0')}";
+    final existIndex = workList.indexWhere((e) => e["date"] == dateStr && e["place"] == placeName);
+    if (existIndex >= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("该工地今日已经打卡！")));
+      return;
+    }
+    workList.add({
+      "date": dateStr,
+      "hour": 8.0,
+      "place": placeName,
+    });
+    saveWorkData();
+    loadWorkData();
+  }
+
+  void doManualClock() {
+    final h = double.tryParse(_hourCtrl.text);
+    String placeName = _workNameCtrl.text.trim();
+    if(placeName.isEmpty){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请先填写工地/项目地点！")));
+      return;
+    }
+    if (h == null || h <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请输入有效工时")));
+      return;
+    }
+    final dateStr =
+        "${selectedDay!.year}-${selectedDay!.month.toString().padLeft(2, '0')}-${selectedDay!.day.toString().padLeft(2, '0')}";
+    final existIndex = workList.indexWhere((e) => e["date"] == dateStr && e["place"] == placeName);
+    if (existIndex >= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("该工地今日已经打卡！")));
+      return;
+    }
+    workList.add({
+      "date": dateStr,
+      "hour": h,
+      "place": placeName,
+    });
+    saveWorkData();
+    loadWorkData();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final stat = calcStat();
     return Scaffold(
+      appBar: AppBar(
+        title: const Text("工时打卡"),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -167,23 +272,26 @@ class _WorkClockPageState extends State<WorkClockPage> {
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: const [
+                children: [
                   Column(
                     children: [
-                      Text("1", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                      Text("出勤天数"),
+                      Text("${stat["days"]}",
+                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                      const Text("出勤天数"),
                     ],
                   ),
                   Column(
                     children: [
-                      Text("8.00 h", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                      Text("总工时"),
+                      Text("${stat["hours"].toStringAsFixed(2)} h",
+                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                      const Text("总工时"),
                     ],
                   ),
                   Column(
                     children: [
-                      Text("99999.00 元", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                      Text("预估工资"),
+                      Text("${stat["money"].toStringAsFixed(2)} 元",
+                          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                      const Text("预估工资"),
                     ],
                   ),
                 ],
@@ -197,6 +305,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 labelText: "日工价（8小时工资）",
                 border: OutlineInputBorder(),
               ),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -208,15 +317,19 @@ class _WorkClockPageState extends State<WorkClockPage> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: "全部工地",
+              value: selectedSite,
               decoration: const InputDecoration(
                 labelText: "筛选工地（只看该工地记录）",
                 border: OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(value: "全部工地", child: Text("全部工地")),
-              ],
-              onChanged: (v) {},
+              items: siteList.map((site)=>DropdownMenuItem(value:site,child:Text(site))).toList(),
+              onChanged: (v) {
+                if(v != null){
+                  setState(() {
+                    selectedSite = v;
+                  });
+                }
+              },
             ),
             const SizedBox(height: 12),
             TextField(
@@ -231,9 +344,25 @@ class _WorkClockPageState extends State<WorkClockPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                ElevatedButton(onPressed: () {}, child: const Text("自动打卡 8H")),
-                ElevatedButton(onPressed: () {}, child: const Text("手动打卡")),
-                ElevatedButton(onPressed: () {}, child: const Text("补签")),
+                ElevatedButton(onPressed: doAutoClock, child: const Text("自动打卡 8H")),
+                ElevatedButton(onPressed: doManualClock, child: const Text("手动打卡")),
+                ElevatedButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDay ?? DateTime.now(),
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2099),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        selectedDay = picked;
+                      });
+                      loadWorkData();
+                    }
+                  },
+                  child: const Text("补签"),
+                ),
               ],
             ),
           ],
