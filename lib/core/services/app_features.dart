@@ -10,6 +10,7 @@
 // 导入失败时随设置快照回滚。在功能管理里保存过就整份落盘（含与默认相同的
 // 值），没有这个键只表示从没保存过——纪念日改为默认关闭之前的老用户据此
 // 保留纪念日，见 `keepLegacyAnniversariesVisible`。
+
 import 'dart:convert';
 
 /// 各功能是否开启。不可变；修改经 [copyWith] 得到新值后保存。
@@ -101,10 +102,12 @@ class AppFeatures {
     }
     if (node is! Map) return defaults;
     final map = node;
+
     bool read(String key, bool fallback) {
       final value = map[key];
       return value is bool ? value : fallback;
     }
+
     return AppFeatures(
       calendar: read(_keyCalendar, defaults.calendar),
       todos: read(_keyTodos, defaults.todos),
@@ -183,18 +186,18 @@ class AppFeatures {
 
   @override
   int get hashCode => Object.hash(
-    calendar,
-    todos,
-    explore,
-    notebooks,
-    anniversaries,
-    templates,
-    timeCapsules,
-    swipeArchive,
-    comments,
-    ai,
-    tool,
-  );
+        calendar,
+        todos,
+        explore,
+        notebooks,
+        anniversaries,
+        templates,
+        timeCapsules,
+        swipeArchive,
+        comments,
+        ai,
+        tool,
+      );
 
   @override
   String toString() =>
@@ -202,166 +205,4 @@ class AppFeatures {
       'notebooks: $notebooks, anniversaries: $anniversaries, '
       'templates: $templates, timeCapsules: $timeCapsules, '
       'swipeArchive: $swipeArchive, comments: $comments, ai: $ai, tool: $tool)';
-}
-
-
-  /// 待办 Tab：独立于日记的待办、清单与提醒，以及日历上的待办、预览页的
-  /// “添加待办 / 转为独立待办”与相关待办。默认关闭；关闭只隐藏这些入口并
-  /// 停掉提醒，待办仍在库里。
-  final bool todos;
-
-  /// 探索 Tab。
-  final bool explore;
-
-  /// 日记本。
-  final bool notebooks;
-
-  /// 纪念日的用户开关值；界面判断是否可用请读 [anniversariesEnabled]。
-  final bool anniversaries;
-
-  /// 日记模板。
-  final bool templates;
-
-  /// 时间胶囊。
-  final bool timeCapsules;
-
-  /// 侧滑归档：日记列表左滑卡片归档、归档页左滑取消归档（只在手机上有这个
-  /// 手势，桌面用右键菜单）。关闭后仍可长按多选或在预览页里归档。
-  final bool swipeArchive;
-
-  /// 留言：预览页正文末尾的留言区，以及卡片与信息栏的留言数、搜索留言、
-  /// 探索页的留言卡片与导出时带留言。默认关闭；关闭只隐藏这些，留言仍在库里。
-  final bool comments;
-
-  /// AI 助手：用用户自己配置的 AI 服务接口（OpenAI 兼容 / Claude / Gemini）
-  /// 写作、回应、回顾与对话。默认关闭；开启后还要在设置 → AI 助手里配好
-  /// 服务商，各处入口才会出现（见 `aiAvailableProvider`）。关闭只隐藏入口，
-  /// AI 记录与服务商配置都保留。
-  final bool ai;
-
-  /// 纪念日依附日历（列表只能从日历顶栏进入），日历关闭时一并关闭；界面一律
-  /// 读这个 getter 判断纪念日是否可用，不直接读 [anniversaries]（它只是用户
-  /// 自己的开关值，日历重新开启时恢复）。
-  bool get anniversariesEnabled => calendar && anniversaries;
-
-  static const _keyCalendar = 'calendar';
-  static const _keyTodos = 'todos';
-  static const _keyExplore = 'explore';
-  static const _keyNotebooks = 'notebooks';
-  static const _keyAnniversaries = 'anniversaries';
-  static const _keyTemplates = 'templates';
-  static const _keyTimeCapsules = 'timeCapsules';
-  static const _keySwipeArchive = 'swipeArchive';
-  static const _keyComments = 'comments';
-  static const _keyAi = 'ai';
-
-  /// 解析设置原文。空值、坏 JSON 或不是对象时回到 [defaults]；每个字段
-  /// 单独读取，类型不对只让这一项回到默认，认不出的键忽略——这样新旧版本
-  /// 互相导入备份时，不会因为一项坏值把用户关掉的其他功能全部重新打开。
-  static AppFeatures decode(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return defaults;
-    final Object? node;
-    try {
-      node = jsonDecode(raw);
-    } on FormatException {
-      return defaults;
-    }
-    if (node is! Map) return defaults;
-    final map = node;
-    bool read(String key, bool fallback) {
-      final value = map[key];
-      return value is bool ? value : fallback;
-    }
-
-    return AppFeatures(
-      calendar: read(_keyCalendar, defaults.calendar),
-      todos: read(_keyTodos, defaults.todos),
-      explore: read(_keyExplore, defaults.explore),
-      notebooks: read(_keyNotebooks, defaults.notebooks),
-      anniversaries: read(_keyAnniversaries, defaults.anniversaries),
-      templates: read(_keyTemplates, defaults.templates),
-      timeCapsules: read(_keyTimeCapsules, defaults.timeCapsules),
-      swipeArchive: read(_keySwipeArchive, defaults.swipeArchive),
-      comments: read(_keyComments, defaults.comments),
-      ai: read(_keyAi, defaults.ai),
-    );
-  }
-
-  /// 编码为设置原文。与默认相同时也整份写出：设置里有这个键就说明用户在
-  /// 功能管理里保存过，升级迁移不会再改动它（见文件头）。
-  String encode() {
-    return jsonEncode(<String, bool>{
-      _keyCalendar: calendar,
-      _keyTodos: todos,
-      _keyExplore: explore,
-      _keyNotebooks: notebooks,
-      _keyAnniversaries: anniversaries,
-      _keyTemplates: templates,
-      _keyTimeCapsules: timeCapsules,
-      _keySwipeArchive: swipeArchive,
-      _keyComments: comments,
-      _keyAi: ai,
-    });
-  }
-
-  AppFeatures copyWith({
-    bool? calendar,
-    bool? todos,
-    bool? explore,
-    bool? notebooks,
-    bool? anniversaries,
-    bool? templates,
-    bool? timeCapsules,
-    bool? swipeArchive,
-    bool? comments,
-    bool? ai,
-  }) {
-    return AppFeatures(
-      calendar: calendar ?? this.calendar,
-      todos: todos ?? this.todos,
-      explore: explore ?? this.explore,
-      notebooks: notebooks ?? this.notebooks,
-      anniversaries: anniversaries ?? this.anniversaries,
-      templates: templates ?? this.templates,
-      timeCapsules: timeCapsules ?? this.timeCapsules,
-      swipeArchive: swipeArchive ?? this.swipeArchive,
-      comments: comments ?? this.comments,
-      ai: ai ?? this.ai,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is AppFeatures &&
-      other.calendar == calendar &&
-      other.todos == todos &&
-      other.explore == explore &&
-      other.notebooks == notebooks &&
-      other.anniversaries == anniversaries &&
-      other.templates == templates &&
-      other.timeCapsules == timeCapsules &&
-      other.swipeArchive == swipeArchive &&
-      other.comments == comments &&
-      other.ai == ai;
-
-  @override
-  int get hashCode => Object.hash(
-    calendar,
-    todos,
-    explore,
-    notebooks,
-    anniversaries,
-    templates,
-    timeCapsules,
-    swipeArchive,
-    comments,
-    ai,
-  );
-
-  @override
-  String toString() =>
-      'AppFeatures(calendar: $calendar, todos: $todos, explore: $explore, '
-      'notebooks: $notebooks, anniversaries: $anniversaries, '
-      'templates: $templates, timeCapsules: $timeCapsules, '
-      'swipeArchive: $swipeArchive, comments: $comments, ai: $ai)';
 }
