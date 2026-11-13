@@ -43,7 +43,8 @@ enum HomeTab {
   /// 是否有首页的“新建”FAB（玻璃底栏时为并排按钮）：日记页新建日记，
   /// 待办页新建待办；其余 Tab 没有。
   bool get hasCreateFab => switch(this){
-    HomeTab.diaries || HomeTab.todos => true,
+    HomeTab.diaries => true,
+    HomeTab.todos => true,
     _ => false,
   };
 
@@ -63,7 +64,7 @@ List<HomeTab> visibleHomeTabs(AppFeatures features) =>
       if (features.calendar) HomeTab.calendar,
       if (features.todos) HomeTab.todos,
       if (features.explore) HomeTab.explore,
-      HomeTab.tool,
+      if (features.tool) HomeTab.tool,
     ]);
 
 /// 全部 Tab 都开启时的底栏顺序（设置里导航栏样式的预览用）。
