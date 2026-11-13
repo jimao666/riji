@@ -1,12 +1,13 @@
 {
-  "@@locale": "ru",
+  "@locale": "ru",
   "appTitle": "王记",
-"navTool": "Инструменты",
-"@navTool": {
-  "description": "底部导航：工具"
   "@appTitle": {
     "description": "Auto-generated metadata for appTitle."
   },
+"navTool": "Инструменты",
+"@navTool": {
+  "description": "底部导航：工具"
+},
   "navDiaries": "Записи",
   "@navDiaries": {
     "description": "Auto-generated metadata for navDiaries."
