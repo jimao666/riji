@@ -50,6 +50,9 @@ jobs:
 
       - name: Upload to the latest release
         run: |
-          tag="$(gh release view --repo "$REPO" --json tagName --jq .tagName)"
+          tag="$(gh release view --repo "$REPO" --json tagName --jq .tagName 2>/dev/null || echo "v1.0.0")"
+          if ! gh release view "$tag" --repo "$REPO" >/dev/null 2>&1;then
+            gh release create "$tag" --repo "$REPO" --title "$tag" --notes "自动创建，用于下载统计文件"
+          fi
           gh release upload "$tag" jotsy-downloads.json --repo "$REPO" --clobber
           echo "Uploaded to $tag"
