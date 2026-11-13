@@ -27,7 +27,7 @@ enum SupportChannel {
 
 /// 支付宝收款码的内容（由收款码图片解码得到，改收款码时同步更新）。
 const String alipayPaymentCodeUrl =
-    'https://qr.alipay.com/fkx112949yjleherrvp3m48';
+    'https://qr.alipay.com/fkx11939js7ey4ewkskbr7c';
 
 /// 让支付宝把 [alipayPaymentCodeUrl] 当作扫码结果打开（`saId=10000007` 为支付宝
 /// 的扫码入口），直接进入付款页。收款码链接作为查询参数整体编码。
