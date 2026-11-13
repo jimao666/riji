@@ -38,10 +38,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
       final List list = json.decode(raw);
       workList = list.cast<Map<String, dynamic>>();
     }
-    // 提取所有工地名称，去重
     Set<String> sites = {};
-    for(var item in workList){
-      if(item["place"] != null && item["place"].toString().trim().isNotEmpty){
+    for (var item in workList) {
+      if (item["place"] != null && item["place"].toString().trim().isNotEmpty) {
         sites.add(item["place"].toString().trim());
       }
     }
@@ -55,10 +54,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
   }
 
   Widget buildCalendarGrid() {
-    // 筛选之后再判断是否打卡
     var filterList = workList;
-    if(selectedSite != "全部工地"){
-      filterList = workList.where((item)=>item["place"] == selectedSite).toList();
+    if (selectedSite != "全部工地") {
+      filterList = workList.where((item) => item["place"] == selectedSite).toList();
     }
     bool hasClock = filterList.any((item) {
       DateTime itemDate = DateTime.parse(item["date"]);
@@ -116,7 +114,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 
-  // 统计，带上工地筛选
   Map<String, dynamic> calcStat() {
     int days = 0;
     double hours = 0;
@@ -124,8 +121,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
     final double wage = double.tryParse(_wageCtrl.text) ?? 0;
 
     var filterList = workList;
-    if(selectedSite != "全部工地"){
-      filterList = workList.where((item)=>item["place"] == selectedSite).toList();
+    if (selectedSite != "全部工地") {
+      filterList = workList.where((item) => item["place"] == selectedSite).toList();
     }
 
     for (var item in filterList) {
@@ -144,7 +141,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
 
   void doAutoClock() {
     String placeName = _workNameCtrl.text.trim();
-    if(placeName.isEmpty){
+    if (placeName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请先填写工地/项目地点！")));
       return;
     }
@@ -167,7 +164,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
   void doManualClock() {
     final h = double.tryParse(_hourCtrl.text);
     String placeName = _workNameCtrl.text.trim();
-    if(placeName.isEmpty){
+    if (placeName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("请先填写工地/项目地点！")));
       return;
     }
@@ -322,9 +319,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 labelText: "筛选工地（只看该工地记录）",
                 border: OutlineInputBorder(),
               ),
-              items: siteList.map((site)=>DropdownMenuItem(value:site,child:Text(site))).toList(),
+              items: siteList.map((site) => DropdownMenuItem(value: site, child: Text(site))).toList(),
               onChanged: (v) {
-                if(v != null){
+                if (v != null) {
                   setState(() {
                     selectedSite = v;
                   });
