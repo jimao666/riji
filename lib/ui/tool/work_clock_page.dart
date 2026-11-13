@@ -525,27 +525,22 @@ class _WorkClockPageState extends State<WorkClockPage> {
     final hasClockDays = getHasClockDaySet();
     final today = DateTime.now();
     final todayStr = "${today.year}-${today.month}-${today.day}";
-
     List<Widget> cells = [];
-    // 星期表头
     const weekTitles = ["一", "二", "三", "四", "五", "六", "日"];
     for (var w in weekTitles) {
       cells.add(
         Expanded(child: Center(child: Text(w, style: const TextStyle(fontWeight: FontWeight.w500)))),
       );
     }
-    // 前面空白占位
     for (int i = 1; i < firstWeekDay; i++) {
       cells.add(const Expanded(child: SizedBox()));
     }
-    // 日期格子
     for (int d = 1; d <= daysInMonth; d++) {
       final dayDt = DateTime(selectYear, selectMonth, d);
       final dayKey = "${selectYear}-${selectMonth}-$d";
       final isClock = hasClockDays.contains(dayKey);
       final isSelected = selectedDay?.year == selectYear && selectedDay?.month == selectMonth && selectedDay?.day == d;
       final isToday = dayKey == todayStr;
-
       cells.add(
         Expanded(
           child: InkWell(
@@ -612,7 +607,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 月份切换 + 折叠按钮
             Row(
               children: [
                 IconButton(
@@ -657,7 +651,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 )
               ],
             ),
-            // 日历
             buildCalendarGrid(),
             const SizedBox(height: 12),
             TextField(
@@ -666,8 +659,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
             ),
             const SizedBox(height: 10),
             if (panelExpanded)
-              Expanded(
-                flex: 0,
+              SizedBox(
+                height: 360,
                 child: SingleChildScrollView(
                   physics: const ClampingScrollPhysics(),
                   child: Column(
@@ -775,7 +768,8 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     ],
                   ),
                 ),
-            // 选中日期的打卡记录
+              ),
+            const SizedBox(height:8),
             Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             Expanded(
