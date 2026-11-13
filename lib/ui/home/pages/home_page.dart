@@ -53,6 +53,7 @@ import '../../widgets/glass/glass_reveal.dart';
 import '../../widgets/launch_reveal.dart';
 import '../../ai/controllers/ai_chat_return_flow.dart';
 import '../../ai/providers/ai_chat_return_provider.dart';
+import 'package:node_diary/ui/tool/tool_overview_page.dart';
 part '../controllers/home_page_controller.dart';
 part 'home_page_chrome.dart';
 part 'home_page_shortcuts.dart';
@@ -373,7 +374,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     });
   }
 
-  /// 取 [tab] 的页面，第一次用到时创建并缓存。
+    /// 取 [tab] 的页面，第一次用到时创建并缓存。
   Widget _pageFor(HomeTab tab) {
     return _pages.putIfAbsent(
       tab,
@@ -400,10 +401,14 @@ class _HomePageState extends ConsumerState<HomePage> {
           HomeTab.explore => const ExplorePage(
             key: PageStorageKey<String>('tab_explore'),
           ),
+          HomeTab.tool => const ToolOverviewPage(
+            key: PageStorageKey<String>('tab_tool'),
+          ),
         },
       ),
     );
   }
+
 
   /// 保活 + 区域背景信息 + 独立主滚动控制器 + 配置变更时重建。
   ///
