@@ -1,9 +1,13 @@
 {
   "@@locale": "en",
-  "appTitle": "Jotsy",
+  "appTitle": "王记",
   "@appTitle": {
     "description": "Auto-generated metadata for appTitle."
   },
+"navTool": "Tool",
+"@navTool": {
+  "description": "底部导航：工具"
+},
   "navDiaries": "Diaries",
   "@navDiaries": {
     "description": "Auto-generated metadata for navDiaries."
@@ -744,7 +748,7 @@
   "@appUpdateSourceSheetHintDesktop": {
     "description": "桌面版下载线路面板的说明（安装包在浏览器中下载，应用不校验）。"
   },
-  "aboutSubmitIssue": "Submit issue",
+  "aboutSubmitIssue": "Menghe Software Library",
   "@aboutSubmitIssue": {
     "description": "Action title to open issue feedback page."
   },
@@ -752,7 +756,7 @@
   "@aboutQqFeedbackGroup": {
     "description": "Action title for copying the QQ feedback group number."
   },
-  "aboutQqFeedbackGroupSubtitle": "678136434",
+  "aboutQqFeedbackGroupSubtitle": "904154681",
   "@aboutQqFeedbackGroupSubtitle": {
     "description": "QQ feedback group number shown on the About page."
   },
