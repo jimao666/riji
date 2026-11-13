@@ -156,10 +156,13 @@ extension _HomePageChrome on _HomePageState {
   /// 提示出现时的上移量在此之上照旧计算（提示同样排在底栏槽位上方）。
   Widget _buildGlobalCreateFab(HomeBarResolvedStyle barStyle) {
     final shouldShow = switch (_effectiveTab) {
-      HomeTab.diaries => _diariesFabVisibleByScroll,
-      HomeTab.todos => !_todosSelecting,
-      HomeTab.calendar || HomeTab.explore => false,
-    };
+  HomeTab.diaries => _diariesFabVisibleByScroll,
+  HomeTab.todos => !_todosSelecting,
+  HomeTab.calendar => false,
+  HomeTab.explore => false,
+  HomeTab.tool => false,
+};
+
     final fabBaseBottomOffset = _HomePageState._fabBottomGapAboveNav;
     // 没有底栏（只剩日记一个 Tab）时 body 同样止于屏幕底部，按收起的底栏
     // 处理：落到手势条上方 10dp。
