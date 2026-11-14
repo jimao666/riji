@@ -55,19 +55,17 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     if (status.isGranted) return true;
     final req = await Permission.camera.request();
     if (req.isGranted) return true;
-    if (req.isPermanentlyDenied) {
-      if (mounted) {
-        await showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text("相机权限被拒绝"),
-              content: const Text("请到系统设置开启相机权限"),
-              actions: [
-                TextButton(onPressed: ()=>Navigator.pop(context), child: const Text("取消")),
-                TextButton(onPressed: (){openAppSettings();Navigator.pop(context);}, child: const Text("去设置"))
-              ],
-            ));
-      }
+    if (req.isPermanentlyDenied && mounted) {
+      await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("相机权限被拒绝"),
+            content: const Text("请到系统设置开启相机权限"),
+            actions: [
+              TextButton(onPressed: ()=>Navigator.pop(context), child: const Text("取消")),
+              TextButton(onPressed: (){openAppSettings();Navigator.pop(context);}, child: const Text("去设置"))
+            ],
+          ));
     }
     return false;
   }
@@ -183,7 +181,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
   Future<void> _fetchWeather(double lat, double lon) async {
     try{
       HttpClient client = HttpClient();
-      Uri uri = Uri.parse("https://api.open‑meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code");
+      Uri uri = Uri.parse("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code");
       var req = await client.getUrl(uri);
       var resp = await req.close();
       var str = await resp.transform(utf8.decoder).join();
@@ -245,38 +243,40 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
     double lineH = fontSizeTime *1.4;
     double padding = 10 * scaleFactor;
-    double totalH = (leftLines.length>rightLines.length?leftLines.length:rightLines.length)*lineH + padding*2;
+    int maxLineCount = leftLines.length > rightLines.length ? leftLines.length : rightLines.length;
+    double totalH = maxLineCount * lineH + padding*2;
     double bottomY = origin.height.toDouble();
-    double rectTop = bottomY‑totalH;
+    double rectTop = bottomY - totalH;
 
     // 透明 / 白底切换
     if(_useWhiteBg){
       canvas.drawRect(Rect.fromLTWH(0,rectTop,baseW,totalH), Paint()..color=Colors.white.withOpacity(0.85));
     }
 
-    ui.ParagraphBuilder buildPara(String text, double fs, bool isBold, bool alignRight){
-      final para = ui.ParagraphBuilder(ui.ParagraphStyle(
+    ui.Paragraph buildPara(String text, double fs, bool isBold, bool alignRight, double maxWidth){
+      final paraBuilder = ui.ParagraphBuilder(ui.ParagraphStyle(
         textAlign: alignRight?ui.TextAlign.right:ui.TextAlign.left,
         fontSize: fs,
         fontWeight: isBold?ui.FontWeight.bold:ui.FontWeight.normal,
       ));
-      para.pushStyle(ui.TextStyle(
+      paraBuilder.pushStyle(ui.TextStyle(
         color: _useWhiteBg?Colors.black:Colors.white,
         shadows: [
           if(!_useWhiteBg) ui.Shadow(color:Colors.black, blurRadius:2, offset:const Offset(1,1))
         ]
       ));
-      para.addText(text);
-      para.pop();
+      paraBuilder.addText(text);
+      paraBuilder.pop();
+      final para = paraBuilder.build();
+      para.layout(ui.ParagraphConstraints(width: maxWidth));
       return para;
     }
 
     double y = rectTop + padding;
     // 左侧
     for(var s in leftLines){
-      var p = buildPara(s, fontSizeNormal, s==kWatermarkBrandName, false);
-      p.layout(ui.ParagraphConstraints(width: baseW*0.45));
-      canvas.drawParagraph(p.build(), Offset(padding,y));
+      var p = buildPara(s, fontSizeNormal, s==kWatermarkBrandName, false, baseW*0.45);
+      canvas.drawParagraph(p, Offset(padding,y));
       y+=lineH;
     }
 
@@ -284,9 +284,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     // 右侧右对齐
     for(var s in rightLines){
       var fs = s==timeStr?fontSizeTime:fontSizeNormal;
-      var p = buildPara(s, fs, s==timeStr, true);
-      p.layout(ui.ParagraphConstraints(width: baseW‑padding*2));
-      canvas.drawParagraph(p.build(), Offset(padding,y));
+      var p = buildPara(s, fs, s==timeStr, true, baseW - padding*2);
+      canvas.drawParagraph(p, Offset(padding,y));
       y+=lineH;
     }
 
