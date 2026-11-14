@@ -141,7 +141,7 @@ flutter_launcher_icons:
 dependency_overrides:
   intl: ^0.20.2
   dependencies:
-  table_calendar: ^3.1.0
+  table_calendar: ^3.2.1
 
 
   
