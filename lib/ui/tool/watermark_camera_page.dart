@@ -229,25 +229,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         longitude = pos.longitude;
       });
 
-      // 反向地理编码（国内部分机型没有 Google 服务，失败就用经纬度）
-      try {
-        final List<Placemark> marks = await Geolocator.placemarkFromCoordinates(
-            pos.latitude, pos.longitude);
-        if (marks.isNotEmpty) {
-          final Placemark m = marks.first;
-          final parts = <String>[
-            if ((m.administrativeArea ?? "").isNotEmpty) m.administrativeArea!,
-            if ((m.locality ?? "").isNotEmpty) m.locality!,
-            if ((m.subLocality ?? "").isNotEmpty) m.subLocality!,
-            if ((m.street ?? "").isNotEmpty) m.street!,
-          ];
-          if (mounted && parts.isNotEmpty) {
-            setState(() {
-              addressText = parts.join(" ");
-            });
-          }
-        }
-      } catch (_) {}
+      // 反向地理编码（geolocator 14 已移除该接口，改用 OpenStreetMap 免费接口）
+      await fetchAddress(pos.latitude, pos.longitude);
 
       // 天气（open-meteo 免费接口，不需要 key）
       await fetchWeather(pos.latitude, pos.longitude);
@@ -259,6 +242,60 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
           locating = false;
         });
       }
+    }
+  }
+
+  /// 用 OpenStreetMap 免费接口把经纬度换成「省 市 区」中文地址
+  Future<void> fetchAddress(double lat, double lon) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 8);
+    try {
+      final uri = Uri.parse(
+        "https://nominatim.openstreetmap.org/reverse?format=jsonv2"
+        "&lat=${lat.toStringAsFixed(6)}"
+        "&lon=${lon.toStringAsFixed(6)}"
+        "&accept-language=zh-CN&zoom=16",
+      );
+      final request = await client.getUrl(uri);
+      request.headers.set("User-Agent", "Jotsy/0.14 (personal app)");
+      final response =
+          await request.close().timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return;
+      final body = await response.transform(utf8.decoder).join();
+      final Map<String, dynamic> json = jsonDecode(body);
+      final Map<String, dynamic> addr =
+          Map<String, dynamic>.from((json["address"] ?? {}) as Map);
+
+      String pick(List<String> keys) {
+        for (final String k in keys) {
+          final dynamic v = addr[k];
+          if (v != null && v.toString().trim().isNotEmpty) {
+            return v.toString().trim();
+          }
+        }
+        return "";
+      }
+
+      final List<String> parts = <String>[];
+      final String state = pick(["state", "province"]);
+      final String city = pick(["city", "town", "county", "municipality"]);
+      final String district =
+          pick(["suburb", "city_district", "district", "neighbourhood"]);
+      if (state.isNotEmpty) parts.add(state);
+      if (city.isNotEmpty) parts.add(city);
+      if (district.isNotEmpty) parts.add(district);
+      final String road = pick(["road", "pedestrian", "footway"]);
+      if (parts.isEmpty && road.isNotEmpty) parts.add(road);
+
+      if (mounted && parts.isNotEmpty) {
+        setState(() {
+          addressText = parts.join(" ");
+        });
+      }
+    } catch (_) {
+      // 地址拿不到就只显示经纬度，不影响水印
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -1118,4 +1155,3 @@ class SizedButton extends StatelessWidget {
     return button;
   }
 }
-
