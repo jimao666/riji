@@ -2,15 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:gal/gal.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-// ===================== 常量配置 =====================
 const String kWatermarkBrandName = "王记相机";
-const String kWatermarkLogoAsset = "assets/app_icon/mingcute_icon.png";
 
 class WatermarkCameraPage extends StatefulWidget {
   const WatermarkCameraPage({super.key});
@@ -31,17 +28,12 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
   String _projectName = "";
   String _noteText = "";
-
-  // 定位调试字段
-  String _locStatus = "未开始";
-  String _permStatus = "-";
-  String _cachePosText = "无";
-  String _geoReverseStatus = "-";
-  String _locErrorMsg = "";
+  String _manualAddress = "";
+  String _manualWeather = "";
 
   Position? _currentPosition;
-  String _addressText = "";
-  String _weatherInfo = "";
+  String _netAddress = "";
+  String _netWeather = "";
 
   @override
   void initState() {
@@ -49,7 +41,6 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     _checkLocationAndFetch();
   }
 
-  // ---------------------- 权限校验 ----------------------
   Future<bool> ensureCameraPermission() async {
     final status = await Permission.camera.status;
     if (status.isGranted) return true;
@@ -72,10 +63,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
   Future<bool> ensureLocationPermission() async {
     final status = await Permission.location.status;
-    setState(()=>_permStatus = status.name);
     if(status.isGranted) return true;
     final res = await Permission.location.request();
-    setState(()=>_permStatus = res.name);
     if(res.isGranted) return true;
     if(res.isPermanentlyDenied && mounted){
       await showDialog(
@@ -92,68 +81,39 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     return false;
   }
 
-  // ---------------------- 定位核心（带调试信息） ----------------------
   Future<void> _checkLocationAndFetch() async {
-    setState(() {
-      _locStatus = "检测中";
-      _locErrorMsg = "";
-    });
-
     bool serviceOk = await Geolocator.isLocationServiceEnabled();
-    if(!serviceOk){
-      setState((){
-        _locStatus = "失败";
-        _locErrorMsg = "手机系统定位总开关未打开";
-      });
-      return;
-    }
-
+    if(!serviceOk) return;
     bool permOk = await ensureLocationPermission();
-    if(!permOk){
-      setState((){
-        _locStatus = "失败";
-        _locErrorMsg = "没有定位权限";
-      });
-      return;
-    }
+    if(!permOk) return;
 
-    // 读取缓存上一次位置
-    Position? lastCache = await Geolocator.getLastKnownPosition();
+    Position? lastCache = await Geolocator.getLastKnownPosition(forceAndroidLocationManager: true);
     if(lastCache != null){
       setState((){
-        _cachePosText = "${lastCache.latitude.toStringAsFixed(4)},${lastCache.longitude.toStringAsFixed(4)}";
         _currentPosition = lastCache;
       });
       await _reverseGeocode(lastCache);
-      await _fetchWeather(lastCache.latitude, lastCache.longitude);
-    }else{
-      setState(()=>_cachePosText = "无缓存位置");
+      await _fetchOpenMeteoWeather(lastCache.latitude, lastCache.longitude);
     }
 
-    // 请求实时位置，放宽精度，超时30秒
     try{
       Position realPos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
             accuracy: LocationAccuracy.low,
-            timeLimit: Duration(seconds: 30)
-          )
+            timeLimit: Duration(seconds: 20)
+          ),
+          forceAndroidLocationManager: true
       );
       setState((){
-        _locStatus = "已定位";
         _currentPosition = realPos;
-        _cachePosText = "${realPos.latitude.toStringAsFixed(4)},${realPos.longitude.toStringAsFixed(4)}";
       });
       await _reverseGeocode(realPos);
-      await _fetchWeather(realPos.latitude, realPos.longitude);
-    }catch(e){
-      setState((){
-        _locStatus = "获取实时位置失败";
-        _locErrorMsg = e.toString();
-      });
+      await _fetchOpenMeteoWeather(realPos.latitude, realPos.longitude);
+    }catch(_){
+      // 超时静默，优先使用缓存位置，不弹窗
     }
   }
 
-  // 逆地理，使用OpenStreetMap
   Future<void> _reverseGeocode(Position pos) async {
     try{
       HttpClient client = HttpClient();
@@ -166,22 +126,16 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
       Map address = map["address"]??{};
       String area = "${address["province"]??""} ${address["city"]??""} ${address["district"]??""}".trim();
       setState((){
-        _addressText = area;
-        _geoReverseStatus = "成功";
+        _netAddress = area;
       });
       client.close();
-    }catch(err){
-      setState((){
-        _geoReverseStatus = "解析地址失败:$err";
-      });
-    }
+    }catch(_){}
   }
 
-  // open‑meteo天气
-  Future<void> _fetchWeather(double lat, double lon) async {
+  Future<void> _fetchOpenMeteoWeather(double lat, double lon) async {
     try{
       HttpClient client = HttpClient();
-      Uri uri = Uri.parse("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,wind_speed_10m,wind_direction_10m,weather_code");
+      Uri uri = Uri.parse("https://api.open‑meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,wind_speed_10m,wind_direction_10m");
       var req = await client.getUrl(uri);
       var resp = await req.close();
       var str = await resp.transform(utf8.decoder).join();
@@ -189,14 +143,16 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
       var curr = js["current"];
       double temp = curr["temperature_2m"]?.toDouble()??0;
       double windSp = curr["wind_speed_10m"]?.toDouble()??0;
+      double windDir = curr["wind_direction_10m"]?.toDouble()??0;
       setState(() {
-        _weatherInfo = "${temp.round()}℃ 风速${windSp.toStringAsFixed(1)}m/s";
+        _netWeather = "${temp.round()}℃ 风向${windDir.round()}° 风速${windSp.toStringAsFixed(1)}m/s";
       });
       client.close();
-    }catch(e){
-      setState(()=>_weatherInfo = "天气获取失败");
-    }
+    }catch(_){}
   }
+
+  String get _finalAddress => _netAddress.isNotEmpty ? _netAddress : _manualAddress;
+  String get _finalWeather => _netWeather.isNotEmpty ? _netWeather : _manualWeather;
 
   Future<void> _takePhoto() async {
     bool camOk = await ensureCameraPermission();
@@ -218,10 +174,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     final double baseW = origin.width.toDouble();
     double scaleFactor = baseW / 360;
 
-    // 字号自适应
     double fontSizeTime = 19 * scaleFactor;
     double fontSizeNormal = 10.5 * scaleFactor;
-    double fontSizeSmall = 9.5 * scaleFactor;
 
     final now = DateTime.now();
     String timeStr = "${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}:${now.second.toString().padLeft(2,'0')}";
@@ -230,8 +184,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     List<String> rightLines = [];
     rightLines.add(timeStr);
     rightLines.add(dateStr);
-    if(_showLocation && _addressText.isNotEmpty) rightLines.add(_addressText);
-    if(_showWeather && _weatherInfo.isNotEmpty) rightLines.add(_weatherInfo);
+    if(_showLocation && _finalAddress.isNotEmpty) rightLines.add(_finalAddress);
+    if(_showWeather && _finalWeather.isNotEmpty) rightLines.add(_finalWeather);
     if(_showLatLng && _currentPosition!=null){
       rightLines.add("东经${_currentPosition!.longitude.toStringAsFixed(4)}° 北纬${_currentPosition!.latitude.toStringAsFixed(4)}°");
     }
@@ -248,7 +202,6 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     double bottomY = origin.height.toDouble();
     double rectTop = bottomY - totalH;
 
-    // 透明 / 白底切换
     if(_useWhiteBg){
       canvas.drawRect(Rect.fromLTWH(0,rectTop,baseW,totalH), Paint()..color=Colors.white.withOpacity(0.85));
     }
@@ -273,7 +226,6 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     }
 
     double y = rectTop + padding;
-    // 左侧
     for(var s in leftLines){
       var p = buildPara(s, fontSizeNormal, s==kWatermarkBrandName, false, baseW*0.45);
       canvas.drawParagraph(p, Offset(padding,y));
@@ -281,7 +233,6 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     }
 
     y = rectTop + padding;
-    // 右侧右对齐
     for(var s in rightLines){
       var fs = s==timeStr?fontSizeTime:fontSizeNormal;
       var p = buildPara(s, fs, s==timeStr, true, baseW - padding*2);
@@ -311,24 +262,6 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ========== 定位调试面板 ==========
-            Container(
-              padding: const EdgeInsets.all(10),
-              color: Colors.grey.shade200,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("📍定位状态: $_locStatus"),
-                  Text("🔐权限: $_permStatus"),
-                  Text("💾缓存位置: $_cachePosText"),
-                  Text("🌐地址解析: $_geoReverseStatus"),
-                  Text("⚠️错误: $_locErrorMsg", style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height:6),
-                  ElevatedButton(onPressed: _checkLocationAndFetch, child: const Text("🔄刷新定位天气"))
-                ],
-              ),
-            ),
-            const SizedBox(height:12),
             TextField(
               decoration: const InputDecoration(labelText:"工地名称"),
               onChanged: (v)=>_projectName = v,
@@ -336,6 +269,14 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
             TextField(
               decoration: const InputDecoration(labelText:"备注"),
               onChanged: (v)=>_noteText = v,
+            ),
+            TextField(
+              decoration: const InputDecoration(labelText:"兜底‑手动工地地址(网络差时填写)"),
+              onChanged: (v)=>_manualAddress = v,
+            ),
+            TextField(
+              decoration: const InputDecoration(labelText:"兜底‑手动天气(网络差时填写)"),
+              onChanged: (v)=>_manualWeather = v,
             ),
             const SizedBox(height:10),
             Wrap(
