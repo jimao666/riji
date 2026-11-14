@@ -56,6 +56,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
   String windText = "";
   bool locating = false;
   bool weatherFailed = false;
+  String locationError = "";
 
   bool showAddress = true;
   bool showWeather = true;
@@ -195,6 +196,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     if (locating) return;
     setState(() {
       locating = true;
+      locationError = "";
     });
     try {
       final bool serviceOn = await Geolocator.isLocationServiceEnabled();
@@ -202,9 +204,18 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         if (mounted) {
           setState(() {
             locating = false;
+            locationError = "手机定位总开关是关闭的";
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("手机定位服务未开启，打开后才能显示地址")),
+            SnackBar(
+              content: const Text("手机定位服务没开，请去系统设置打开「位置信息」"),
+              action: SnackBarAction(
+                label: "去打开",
+                onPressed: () {
+                  Geolocator.openLocationSettings();
+                },
+              ),
+            ),
           );
         }
         return;
@@ -213,20 +224,70 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
       // 定位权限：没授权就当场申请，被永久拒绝弹窗引导去设置
       final bool hasLocationPermission = await ensureLocationPermission();
       if (!hasLocationPermission) {
+        if (mounted) {
+          setState(() {
+            locating = false;
+            locationError = "App 没有定位权限";
+          });
+        }
         return;
       }
 
-      final Position pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 15),
-        ),
-      );
+      // ① 先用系统缓存的最后一次位置，立刻能显示（不用等 GPS）
+      try {
+        final Position? last = await Geolocator.getLastKnownPosition();
+        if (last != null && mounted) {
+          setState(() {
+            latitude = last.latitude;
+            longitude = last.longitude;
+          });
+        }
+      } catch (_) {}
+
+      // ② 拿实时位置：低精度 = 走网络/基站定位，室内也能定位出来
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.low,
+            timeLimit: Duration(seconds: 25),
+          ),
+        );
+      } catch (_) {
+        pos = null;
+      }
+
+      // ③ 有些机型第一次调用会直接超时，再给一次机会
+      if (pos == null) {
+        try {
+          pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.low,
+              timeLimit: Duration(seconds: 15),
+            ),
+          );
+        } catch (_) {
+          pos = null;
+        }
+      }
+
+      if (pos == null) {
+        if (mounted) {
+          setState(() {
+            locating = false;
+            if (latitude == null) {
+              locationError = "拿不到卫星信号，去窗边或门外点「重试」";
+            }
+          });
+        }
+        return;
+      }
 
       if (!mounted) return;
       setState(() {
-        latitude = pos.latitude;
-        longitude = pos.longitude;
+        latitude = pos!.latitude;
+        longitude = pos!.longitude;
+        locationError = "";
       });
 
       // 反向地理编码（geolocator 14 已移除该接口，改用 OpenStreetMap 免费接口）
@@ -234,8 +295,13 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
       // 天气（open-meteo 免费接口，不需要 key）
       await fetchWeather(pos.latitude, pos.longitude);
-    } catch (_) {
-      // 定位失败不阻塞拍照
+    } catch (e) {
+      // 定位失败不阻塞拍照，但把原因显示出来
+      if (mounted) {
+        setState(() {
+          locationError = "定位出错：$e";
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -291,9 +357,52 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         setState(() {
           addressText = parts.join(" ");
         });
+      } else {
+        await fetchAddressBackup(lat, lon);
       }
     } catch (_) {
-      // 地址拿不到就只显示经纬度，不影响水印
+      // 主接口不通（国内经常超时），换第二个免费源
+      await fetchAddressBackup(lat, lon);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 备用地址源（无需 key，国内可达性比 Nominatim 好）
+  Future<void> fetchAddressBackup(double lat, double lon) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 6);
+    try {
+      final uri = Uri.parse(
+        "https://api.bigdatacloud.net/data/reverse-geocode-client"
+        "?latitude=${lat.toStringAsFixed(6)}"
+        "&longitude=${lon.toStringAsFixed(6)}"
+        "&localityLanguage=zh",
+      );
+      final request = await client.getUrl(uri);
+      request.headers.set("User-Agent", "Jotsy/0.14 (personal app)");
+      final response =
+          await request.close().timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return;
+      final body = await response.transform(utf8.decoder).join();
+      final Map<String, dynamic> json = jsonDecode(body);
+
+      final String province =
+          (json["principalSubdivision"] ?? "").toString().trim();
+      final String city = (json["city"] ?? "").toString().trim();
+      final String locality = (json["locality"] ?? "").toString().trim();
+      final List<String> parts = <String>[];
+      if (province.isNotEmpty) parts.add(province);
+      if (city.isNotEmpty && city != province) parts.add(city);
+      if (locality.isNotEmpty && locality != city) parts.add(locality);
+
+      if (mounted && parts.isNotEmpty) {
+        setState(() {
+          addressText = parts.join(" ");
+        });
+      }
+    } catch (_) {
+      // 两个源都不通就只显示经纬度
     } finally {
       client.close(force: true);
     }
@@ -529,9 +638,19 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     return "$lonDir${lon.abs().toStringAsFixed(4)}° $latDir${lat.abs().toStringAsFixed(4)}°";
   }
 
+  /// 按照片显示宽度缩放水印字号（360dp 手机为基准），大屏/小屏都协调
+  double get watermarkScale {
+    final double w = displayWidth > 40 ? displayWidth : 360;
+    double s = w / 360.0;
+    if (s < 0.85) s = 0.85;
+    if (s > 1.15) s = 1.15;
+    return s;
+  }
+
+  /// 紧凑阴影：字清楚，不糊边
   List<Shadow> get textShadow => const [
-        Shadow(color: Colors.black87, blurRadius: 8, offset: Offset(0, 1)),
-        Shadow(color: Colors.black54, blurRadius: 14, offset: Offset(0, 0)),
+        Shadow(color: Colors.black54, blurRadius: 2, offset: Offset(0, 1)),
+        Shadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 0)),
       ];
 
   Alignment get watermarkAlignment {
@@ -556,22 +675,23 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     final textAlign = isRight ? TextAlign.right : TextAlign.left;
 
     final List<Widget> lines = [];
+    final double ws = watermarkScale;
 
     // 1 时间
     lines.add(
       Text(
         timeText,
         style: TextStyle(
-          fontSize: 34,
-          height: 1.05,
+          fontSize: 21 * ws,
+          height: 1.1,
           fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
+          letterSpacing: 0.3,
           color: Colors.white,
           shadows: textShadow,
         ),
       ),
     );
-    lines.add(const SizedBox(height: 3));
+    lines.add(SizedBox(height: 2 * ws));
 
     // 2 日期 + 星期
     lines.add(
@@ -579,7 +699,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         dateText,
         textAlign: textAlign,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: 11.5 * ws,
           height: 1.2,
           fontWeight: FontWeight.w500,
           color: Colors.white,
@@ -590,7 +710,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
     // 3 定位地址
     if (showAddress && addressText.isNotEmpty) {
-      lines.add(const SizedBox(height: 4));
+      lines.add(SizedBox(height: 3 * ws));
       lines.add(
         Text(
           addressText,
@@ -598,7 +718,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
           overflow: TextOverflow.ellipsis,
           textAlign: textAlign,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 11 * ws,
             height: 1.25,
             color: Colors.white,
             shadows: textShadow,
@@ -609,16 +729,16 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
     // 4 经纬度
     if (showLatLng && latLngText.isNotEmpty) {
-      lines.add(const SizedBox(height: 2));
+      lines.add(SizedBox(height: 1.5 * ws));
       lines.add(
         Text(
           latLngText,
           textAlign: textAlign,
           style: TextStyle(
-            fontSize: 11,
+            fontSize: 10 * ws,
             height: 1.2,
-            letterSpacing: 0.3,
-            color: Colors.white.withValues(alpha: 0.92),
+            letterSpacing: 0.2,
+            color: Colors.white.withValues(alpha: 0.9),
             shadows: textShadow,
           ),
         ),
@@ -627,13 +747,13 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
     // 5 天气 + 风
     if (showWeather && weatherText.isNotEmpty) {
-      lines.add(const SizedBox(height: 3));
+      lines.add(SizedBox(height: 2 * ws));
       lines.add(
         Text(
           windText.isEmpty ? weatherText : "$weatherText  $windText",
           textAlign: textAlign,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 10.5 * ws,
             height: 1.2,
             color: Colors.white,
             shadows: textShadow,
@@ -644,7 +764,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
     // 6 工地 / 备注
     if (place.isNotEmpty) {
-      lines.add(const SizedBox(height: 5));
+      lines.add(SizedBox(height: 4 * ws));
       lines.add(
         Text(
           place,
@@ -652,7 +772,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
           overflow: TextOverflow.ellipsis,
           textAlign: textAlign,
           style: TextStyle(
-            fontSize: 15,
+            fontSize: 12.5 * ws,
             height: 1.25,
             fontWeight: FontWeight.w600,
             color: Colors.white,
@@ -662,7 +782,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
       );
     }
     if (note.isNotEmpty) {
-      lines.add(const SizedBox(height: 3));
+      lines.add(SizedBox(height: 2 * ws));
       lines.add(
         Text(
           note,
@@ -670,9 +790,9 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
           overflow: TextOverflow.ellipsis,
           textAlign: textAlign,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 10.5 * ws,
             height: 1.25,
-            color: Colors.white.withValues(alpha: 0.92),
+            color: Colors.white.withValues(alpha: 0.9),
             shadows: textShadow,
           ),
         ),
@@ -680,7 +800,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     }
 
     // 7 品牌 logo
-    lines.add(const SizedBox(height: 9));
+    lines.add(SizedBox(height: 6 * ws));
     lines.add(
       Row(
         mainAxisSize: MainAxisSize.min,
@@ -688,20 +808,20 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
           ClipOval(
             child: Image.asset(
               kWatermarkLogoAsset,
-              width: 18,
-              height: 18,
-              errorBuilder: (ctx, err, stack) => const SizedBox(
-                width: 18,
-                height: 18,
+              width: 14 * ws,
+              height: 14 * ws,
+              errorBuilder: (ctx, err, stack) => SizedBox(
+                width: 14 * ws,
+                height: 14 * ws,
               ),
             ),
           ),
-          const SizedBox(width: 5),
+          SizedBox(width: 4 * ws),
           Text(
             kWatermarkBrandName,
             style: TextStyle(
-              fontSize: 11,
-              letterSpacing: 1,
+              fontSize: 9.5 * ws,
+              letterSpacing: 0.8,
               fontWeight: FontWeight.w500,
               color: Colors.white.withValues(alpha: 0.95),
               shadows: textShadow,
@@ -714,10 +834,10 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     return Align(
       alignment: watermarkAlignment,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: EdgeInsets.all(10 * ws),
         child: Container(
           constraints: BoxConstraints(
-            maxWidth: displayWidth > 40 ? displayWidth * 0.76 : 260,
+            maxWidth: displayWidth > 40 ? displayWidth * 0.78 : 260,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -879,12 +999,12 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     String text;
     IconData icon;
     Color color;
-    if (locating && latitude == null) {
-      text = "正在获取定位…";
+    if (locating) {
+      text = latitude == null ? "正在获取定位…" : "已定位，正在获取地址…";
       icon = Icons.gps_fixed;
-      color = Colors.grey.shade500;
+      color = Colors.grey.shade600;
     } else if (latitude == null) {
-      text = "未开启定位（水印只显示时间）";
+      text = locationError.isEmpty ? "未开启定位（水印只显示时间）" : locationError;
       icon = Icons.location_off;
       color = Colors.orange.shade700;
     } else if (weatherFailed || weatherText.isEmpty) {
@@ -904,7 +1024,7 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         Flexible(
           child: Text(
             text,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: color),
@@ -926,6 +1046,31 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     );
   }
 
+  Widget noticeBar(String text, Color color) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 15, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 11.5, color: color, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildBottomCard() {
     final hasPhoto = photoFile != null;
     return Container(
@@ -942,6 +1087,13 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (hasPhoto) ...[
+            if (latitude == null) noticeBar(
+              "这张照片没有地址 / 经纬度 / 天气：定位没取到。先点「刷新定位天气」，显示已定位后再「重拍」",
+              Colors.orange.shade800,
+            ) else if (addressText.isEmpty) noticeBar(
+              "地址没取到（网络问题），经纬度已印上。点「刷新定位天气」重试一次",
+              Colors.orange.shade800,
+            ),
             buildChipRow(),
             Row(
               children: [
