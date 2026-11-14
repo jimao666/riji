@@ -565,197 +565,442 @@ class _WorkClockPageState extends State<WorkClockPage> {
     final placeStat = _groupByPlace();
     final allMonthRecords = getMonthRecordsDesc();
     const weekText = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    final screenHeight = MediaQuery.of(context).size.height;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("$selectYear年$selectMonth月 ${filterPlace ?? ''} 汇总"),
-        scrollable: true,
-        content: SizedBox(
-          width: double.maxFinite,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: SizedBox(
+          width: double.infinity,
+          height: screenHeight * 0.86,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
+              // ===== 顶部标题栏 =====
               Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
+                padding: const EdgeInsets.fromLTRB(16, 12, 6, 8),
+                child: Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Text("出勤：$monthDays 天"),
-                        Text("总工时：${monthTotalHour.toStringAsFixed(2)} h"),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("$selectYear年$selectMonth月 汇总",
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text(filterPlace ?? "全部工地",
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade600)),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 16,
-                      children: [
-                        Text("总工资：${monthTotalWage.toStringAsFixed(2)} 元"),
-                        Text("已结：${monthSettledWage.toStringAsFixed(2)} 元"),
-                        Text("未结：${monthUnSettledWage.toStringAsFixed(2)} 元"),
-                      ],
+                    IconButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: "关闭",
                     ),
                   ],
                 ),
               ),
-              const Divider(),
-              const Text("【各工地统计】",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(
-                height: 130,
-                child: ListView(
-                  children: placeStat.entries.map((entry) {
-                    final dSet = entry.value["days"] as Set;
-                    return ListTile(
-                      dense: true,
-                      title: Text(entry.key),
-                      subtitle: Text(
-                          "${dSet.length}天｜${entry.value["hour"].toStringAsFixed(2)}h｜工资${entry.value["wage"].toStringAsFixed(2)}元"),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const Divider(),
-              const Text("【全月打卡明细】点日期可查看当天",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: 260,
-                child: allMonthRecords.isEmpty
-                    ? const Center(child: Text("本月暂无打卡记录"))
-                    : ListView.builder(
-                        itemCount: allMonthRecords.length,
-                        itemBuilder: (dCtx, idx) {
-                          final r = allMonthRecords[idx];
+              const Divider(height: 1),
+              // ===== 中间内容：整页滚动 =====
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 统计卡片
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _summaryCell("$monthDays 天", "出勤"),
+                                _summaryCell(
+                                    "${monthTotalHour.toStringAsFixed(2)}h", "总工时"),
+                                _summaryCell(
+                                    "${monthTotalWage.toStringAsFixed(2)}元", "总工资"),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _summaryCell(
+                                    "${monthSettledWage.toStringAsFixed(2)}元", "已结"),
+                                _summaryCell(
+                                    "${monthUnSettledWage.toStringAsFixed(2)}元", "未结"),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      // 各工地统计
+                      _sectionTitle("各工地统计", "${placeStat.length} 个工地"),
+                      if (placeStat.isEmpty)
+                        _emptyHint("本月暂无打卡记录")
+                      else
+                        ...placeStat.entries.map((entry) {
+                          final dSet = entry.value["days"] as Set;
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    entry.key,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 13, fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                                Text(
+                                  "${dSet.length}天 ｜ ${entry.value["hour"].toStringAsFixed(2)}h ｜ ${entry.value["wage"].toStringAsFixed(2)}元",
+                                  style: TextStyle(
+                                      fontSize: 11, color: Colors.grey.shade700),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      const SizedBox(height: 12),
+                      // 全月打卡明细
+                      _sectionTitle("全月打卡明细", "${allMonthRecords.length} 条"),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6, left: 2),
+                        child: Text("点击任意一条，跳到主界面当天记录",
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey.shade500)),
+                      ),
+                      if (allMonthRecords.isEmpty)
+                        _emptyHint("本月暂无打卡记录")
+                      else
+                        ...allMonthRecords.map((r) {
                           final d = DateTime.parse(r["date"]);
                           final t = DateTime.parse(r["time"]);
                           final wt = weekText[d.weekday - 1];
                           final timeStr =
                               "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
-                          final settleTxt =
-                              r["isSettled"] == true ? "✅已结" : "☐未结";
-                          return ListTile(
-                            dense: true,
+                          final settled = r["isSettled"] == true;
+                          return InkWell(
                             onTap: () {
                               Navigator.pop(ctx);
                               jumpToDay(d);
                             },
-                            leading: const Icon(Icons.event_note, size: 18),
-                            title: Text(
-                                "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} $wt",
-                                style: const TextStyle(fontSize: 13)),
-                            subtitle: Text(
-                                "${r["place"]}｜${r["hour"]}h｜$timeStr｜${r["type"]}｜$settleTxt",
-                                style: const TextStyle(fontSize: 12)),
-                            trailing: const Icon(Icons.chevron_right, size: 16),
-                          );
-                        },
-                      ),
-              ),
-              const Divider(),
-              const Text("【按天分组明细（可点开）】",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(
-                height: 240,
-                child: group.isEmpty
-                    ? const Center(child: Text("本月暂无打卡记录"))
-                    : ListView.builder(
-                        itemCount: group.length,
-                        itemBuilder: (dCtx, idx) {
-                          final g = group[idx];
-                          return ExpansionTile(
-                            title: Text(
-                                "${g["fullDateTitle"]}｜合计${g["sumHour"].toStringAsFixed(2)}h｜${g["count"]}条",
-                                style: const TextStyle(fontSize: 13)),
-                            children: g["items"].map<Widget>((sub) {
-                              final dt = DateTime.parse(sub["time"]);
-                              final timeStr =
-                                  "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                              final settleTxt =
-                                  sub["isSettled"] == true ? "✅已结" : "☐未结";
-                              final realIndex = recordList.indexOf(sub);
-                              return ListTile(
-                                dense: true,
-                                title: Text(
-                                    "${sub["place"]}｜${sub["hour"]}h｜$timeStr 【${sub["type"]}】$settleTxt",
-                                    style: const TextStyle(fontSize: 12)),
-                                trailing: SizedBox(
-                                  width: 88,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.edit, size: 18),
-                                        onPressed: () {
-                                          Navigator.pop(ctx);
-                                          editRecord(realIndex);
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_forever,
-                                            size: 18, color: Colors.red),
-                                        onPressed: () {
-                                          Navigator.pop(ctx);
-                                          deleteRecord(realIndex);
-                                        },
-                                      )
-                                    ],
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0x1A00798C),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text("${d.day}",
+                                            style: const TextStyle(
+                                                fontSize: 16,
+                                                height: 1.1,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF00798C))),
+                                        Text("${d.month}月",
+                                            style: TextStyle(
+                                                fontSize: 9, height: 1.1,
+                                                color: Colors.grey.shade600)),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            }).toList(),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                "${r["place"]} ｜ ${wt}",
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w500),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: settled
+                                                    ? Colors.green.shade50
+                                                    : Colors.orange.shade50,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                settled ? "已结" : "未结",
+                                                style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: settled
+                                                        ? Colors.green.shade700
+                                                        : Colors.orange.shade700),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          "${r["hour"]}h ｜ $timeStr ｜ ${r["type"]}",
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade700),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.chevron_right, size: 16),
+                                ],
+                              ),
+                            ),
                           );
-                        },
-                      ),
+                        }).toList(),
+                      const SizedBox(height: 12),
+                      // 按天分组明细
+                      _sectionTitle("按天分组明细", "${group.length} 天"),
+                      if (group.isEmpty)
+                        _emptyHint("本月暂无打卡记录")
+                      else
+                        ...group.map((g) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Theme(
+                              data: Theme.of(context)
+                                  .copyWith(dividerColor: Colors.transparent),
+                              child: ExpansionTile(
+                                tilePadding:
+                                    const EdgeInsets.symmetric(horizontal: 10),
+                                childrenPadding: const EdgeInsets.only(bottom: 6),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        g["fullDateTitle"],
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    Text(
+                                      "${g["count"]}条 ｜ ${g["sumHour"].toStringAsFixed(2)}h",
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700),
+                                    ),
+                                  ],
+                                ),
+                                children: (g["items"] as List)
+                                    .map<Widget>((sub) {
+                                  final subMap =
+                                      sub as Map<String, dynamic>;
+                                  final dt = DateTime.parse(subMap["time"]);
+                                  final timeStr =
+                                      "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                                  final settleTxt = subMap["isSettled"] == true
+                                      ? "已结"
+                                      : "未结";
+                                  final realIndex = recordList.indexOf(subMap);
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 2),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            "${subMap["place"]} ｜ ${subMap["hour"]}h ｜ $timeStr ｜ ${subMap["type"]} ｜ $settleTxt",
+                                            style: const TextStyle(fontSize: 12),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(Icons.edit, size: 17),
+                                          onPressed: () {
+                                            Navigator.pop(ctx);
+                                            editRecord(realIndex);
+                                          },
+                                        ),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(Icons.delete_forever,
+                                              size: 17, color: Colors.red),
+                                          onPressed: () {
+                                            Navigator.pop(ctx);
+                                            deleteRecord(realIndex);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              // ===== 底部一排操作按钮 =====
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _bottomBtn(Icons.share, "分享", doShare),
+                    _bottomBtn(Icons.file_download, "导出", exportSelectDir),
+                    _bottomBtn(Icons.save_alt, "备份", backupRecord),
+                    _bottomBtn(
+                        Icons.settings_backup_restore, "恢复", restoreRecord),
+                    _bottomBtn(
+                      Icons.delete_forever,
+                      "清空",
+                      () {
+                        showDialog(
+                          context: context,
+                          builder: (cctx) => AlertDialog(
+                            title: const Text("确认清空全部记录？"),
+                            content: const Text("记录将全部删除，建议先备份！"),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(cctx),
+                                  child: const Text("取消")),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(cctx);
+                                  Navigator.pop(ctx);
+                                  clearAll();
+                                },
+                                style: TextButton.styleFrom(
+                                    foregroundColor: Colors.red),
+                                child: const Text("确认清空"),
+                              )
+                            ],
+                          ),
+                        );
+                      },
+                      color: Colors.red,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
-        actions: [
-          IconButton(onPressed: doShare, icon: const Icon(Icons.share), tooltip: "分享"),
-          IconButton(
-              onPressed: exportSelectDir,
-              icon: const Icon(Icons.file_download),
-              tooltip: "导出TXT"),
-          IconButton(
-              onPressed: backupRecord,
-              icon: const Icon(Icons.save_alt),
-              tooltip: "备份"),
-          IconButton(
-              onPressed: restoreRecord,
-              icon: const Icon(Icons.settings_backup_restore),
-              tooltip: "恢复"),
-          IconButton(
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (cctx) => AlertDialog(
-                  title: const Text("确认清空全部记录？"),
-                  content: const Text("记录将全部删除，建议先备份！"),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(cctx),
-                        child: const Text("取消")),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(cctx);
-                        Navigator.pop(ctx);
-                        clearAll();
-                      },
-                      style: TextButton.styleFrom(foregroundColor: Colors.red),
-                      child: const Text("确认清空"),
-                    )
-                  ],
-                ),
-              );
-            },
-            icon: const Icon(Icons.delete_forever, color: Colors.red),
-            tooltip: "清空全部",
+      ),
+    );
+  }
+
+  Widget _summaryCell(String value, String label) {
+    return Column(
+      children: [
+        Text(value,
+            style:
+                const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String title, String extra) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 8, left: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+                color: const Color(0xFF00798C),
+                borderRadius: BorderRadius.circular(2)),
           ),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("关闭")),
+          const SizedBox(width: 6),
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 6),
+          Text(extra,
+              style:
+                  TextStyle(fontSize: 11, color: Colors.grey.shade600)),
         ],
+      ),
+    );
+  }
+
+  Widget _emptyHint(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Center(
+        child: Text(text,
+            style:
+                TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+      ),
+    );
+  }
+
+  Widget _bottomBtn(IconData icon, String label, VoidCallback onTap,
+      {Color? color}) {
+    final c = color ?? Colors.grey.shade700;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: c),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 10, color: c)),
+          ],
+        ),
       ),
     );
   }
