@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -28,6 +29,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
 
   String _placeName = "";
   String _note = "";
+  // 新增：手动位置，自动定位失败的兜底
+  String _manualLocation = "";
 
   Position? _currentPosition;
   String _netAddress = "";
@@ -37,6 +40,12 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
   void initState() {
     super.initState();
     _fetchLocationInfo();
+  }
+
+  // 获取最终显示的地址：有网络自动地址优先，否则读取手动输入
+  String get _finalShowAddress {
+    if (_netAddress.isNotEmpty) return _netAddress;
+    return _manualLocation;
   }
 
   Future<bool> _requestCameraPermission() async {
@@ -90,8 +99,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     final cachedPos = await Geolocator.getLastKnownPosition(forceAndroidLocationManager: true);
     if (cachedPos != null) {
       setState(() => _currentPosition = cachedPos);
-      unawaited(_reverseGeo(cachedPos));
-      unawaited(_fetchWeather(cachedPos.latitude, cachedPos.longitude));
+      _reverseGeo(cachedPos);
+      _fetchWeather(cachedPos.latitude, cachedPos.longitude);
     }
     try {
       final pos = await Geolocator.getCurrentPosition(
@@ -99,8 +108,8 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
         forceAndroidLocationManager: true,
       );
       setState(() => _currentPosition = pos);
-      unawaited(_reverseGeo(pos));
-      unawaited(_fetchWeather(pos.latitude, pos.longitude));
+      _reverseGeo(pos);
+      _fetchWeather(pos.latitude, pos.longitude);
     } catch (_) {}
   }
 
@@ -108,9 +117,9 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     try {
       final client = HttpClient();
       final uri = Uri.parse(
-          "https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json&accept-language=zh‑CN");
+          "https://nominatim.openstreetmap.org/reverse?lat=${pos.latitude}&lon=${pos.longitude}&format=json&accept-language=zh-CN");
       final req = await client.getUrl(uri);
-      req.headers.set("User‑Agent", "wangji_camera_app");
+      req.headers.set("User-Agent", "wangji_camera_app");
       final resp = await req.close();
       final body = await resp.transform(utf8.decoder).join();
       final jsonData = json.decode(body);
@@ -173,8 +182,9 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
     lines.add(timeStr);
     lines.add(dateStr);
 
-    if (_showAddress && _netAddress.isNotEmpty) {
-      lines.add("地址：$_netAddress");
+    // 使用合并后的最终地址
+    if (_showAddress && _finalShowAddress.isNotEmpty) {
+      lines.add("地址：$_finalShowAddress");
     }
     if (_showLatLng && _currentPosition != null) {
       lines.add("经纬度：东经${_currentPosition!.longitude.toStringAsFixed(4)}° 北纬${_currentPosition!.latitude.toStringAsFixed(4)}°");
@@ -265,6 +275,11 @@ class _WatermarkCameraPageState extends State<WatermarkCameraPage> {
             TextField(
               decoration: const InputDecoration(labelText:"工地 / 地点"),
               onChanged: (v)=>_placeName = v,
+            ),
+            // =========新增手动位置输入框=========
+            TextField(
+              decoration: const InputDecoration(labelText:"手动位置（自动定位失败时生效）"),
+              onChanged: (v)=>_manualLocation = v,
             ),
             TextField(
               decoration: const InputDecoration(labelText:"备注"),
