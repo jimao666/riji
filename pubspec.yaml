@@ -140,8 +140,7 @@ flutter_launcher_icons:
   image_path: assets/app_icon/mingcute_icon.png
 dependency_overrides:
   intl: ^0.20.2
-  dependencies:
-  table_calendar: ^3.2.1
+  
 
 
   
