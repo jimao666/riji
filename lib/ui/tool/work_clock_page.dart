@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 class WorkClockPage extends StatefulWidget {
   const WorkClockPage({super.key});
@@ -21,12 +20,14 @@ class _WorkClockPageState extends State<WorkClockPage> {
   final TextEditingController placeCtrl = TextEditingController();
   final TextEditingController wageCtrl = TextEditingController();
   final TextEditingController searchCtrl = TextEditingController();
+
   bool panelExpanded = true;
   int monthDays = 0;
   double monthTotalHour = 0.0;
   double monthTotalWage = 0.0;
   double monthSettledWage = 0.0;
   double monthUnSettledWage = 0.0;
+
   int selectYear = DateTime.now().year;
   int selectMonth = DateTime.now().month;
   DateTime? selectedDay;
@@ -34,7 +35,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
   String searchText = "";
   List<String> allPlaceList = [];
 
-  // table_calendar 新增变量（项目已有此包）
   late DateTime _focusedDay;
   late DateTime _selectedCalendarDay;
 
@@ -48,6 +48,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
     searchCtrl.addListener(() {
       setState(() {
         searchText = searchCtrl.text.trim();
+        calcMonthStat();
       });
     });
   }
@@ -95,7 +96,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
   }
 
   void calcMonthStat() {
-    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    final dayWage = double.tryParse(wageCtrl.text.trim()) ?? 0;
     if (dayWage > 99999) return;
     final list = getFilterRecords();
     final daySet = <String>{};
@@ -122,18 +123,25 @@ class _WorkClockPageState extends State<WorkClockPage> {
   }
 
   List<Map<String, dynamic>> getFilterRecords() {
-    return recordList.where((r) {
+    final list = recordList.where((r) {
       final d = DateTime.parse(r["date"]);
       final matchMonth = d.year == selectYear && d.month == selectMonth;
       final matchPlace = filterPlace == null || r["place"] == filterPlace;
       final matchSearch = searchText.isEmpty || r["place"].toString().contains(searchText);
       return matchMonth && matchPlace && matchSearch;
     }).toList();
+    // 按日期倒序，新记录在最上面
+    list.sort((a, b) {
+      final da = DateTime.parse(a["date"]);
+      final db = DateTime.parse(b["date"]);
+      return db.compareTo(da);
+    });
+    return list;
   }
 
   List<Map<String, dynamic>> getDayRecords(DateTime day) {
-    final dayStr = "${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}";
-    return getFilterRecords().where((r) => r["date"] == dayStr).toList();
+    final targetDateStr = "${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}";
+    return getFilterRecords().where((r) => r["date"] == targetDateStr).toList();
   }
 
   Set<String> getHasClockDaySet() {
@@ -166,25 +174,82 @@ class _WorkClockPageState extends State<WorkClockPage> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 全天打卡成功，工时8h")));
   }
 
-  void manualClock() {
-    final h = double.tryParse(hourCtrl.text);
-    if (h == null || h <= 0 || h > 24) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 请输入合法工时（0~24）")));
-      return;
-    }
-    final now = DateTime.now();
-    final item = {
-      "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
-      "time": now.toIso8601String(),
-      "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
-      "hour": h.toStringAsFixed(2),
-      "type": "手动打卡",
-      "isSettled": false,
-    };
-    recordList.add(item);
-    hourCtrl.clear();
-    saveRecords();
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 手动打卡成功")));
+  void manualClock() async {
+    final TextEditingController dialogPlaceCtrl = TextEditingController();
+    final TextEditingController dialogHourCtrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("手动打卡"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Autocomplete<String>(
+                optionsBuilder: (textEditingValue) {
+                  if (textEditingValue.text.isEmpty) return allPlaceList;
+                  return allPlaceList.where((s) => s.contains(textEditingValue.text));
+                },
+                onSelected: (v) {
+                  dialogPlaceCtrl.text = v;
+                },
+                fieldViewBuilder: (context, _, focusNode, onSubmit) {
+                  return TextField(
+                    controller: dialogPlaceCtrl,
+                    focusNode: focusNode,
+                    decoration: const InputDecoration(
+                      labelText: "工地/项目地点",
+                      hintText: "输入，自动弹出历史工地",
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: dialogHourCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: "工时",
+                  hintText: "例如：4 / 3.5 / 8",
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          TextButton(
+            onPressed: () {
+              final h = double.tryParse(dialogHourCtrl.text);
+              if (h == null || h <= 0 || h > 24) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("⚠️请输入合法工时（0~24）"))
+                );
+                return;
+              }
+              final now = DateTime.now();
+              final place = dialogPlaceCtrl.text.trim().isEmpty ? "未填写工地" : dialogPlaceCtrl.text.trim();
+              final item = {
+                "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
+                "time": now.toIso8601String(),
+                "place": place,
+                "hour": h.toStringAsFixed(2),
+                "type": "手动打卡",
+                "isSettled": false,
+              };
+              recordList.add(item);
+              saveRecords();
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("✅手动打卡成功"))
+              );
+            },
+            child: const Text("确认打卡"),
+          ),
+        ],
+      ),
+    );
   }
 
   void doRepairSign() async {
@@ -397,6 +462,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
   void openSummaryDialog() {
     final group = _groupByDay();
     final placeStat = _groupByPlace();
+    final allMonthRecords = getFilterRecords();
+    const weekText = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -447,17 +515,39 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 ),
               ),
               const Divider(),
-              const Text("【按天明细】", style: TextStyle(fontWeight: FontWeight.bold)),
+              //=====新增：【全月全部打卡明细】平铺列表，全部记录一次性展示=====
+              const Text("【全月打卡全部明细】", style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(
-                height: 220,
+                height: 180,
+                child: allMonthRecords.isEmpty
+                    ? const Center(child: Text("本月暂无打卡记录"))
+                    : ListView.builder(
+                        itemCount: allMonthRecords.length,
+                        itemBuilder: (dCtx, idx) {
+                          final r = allMonthRecords[idx];
+                          final dt = DateTime.parse(r["date"]);
+                          final wt = weekText[dt.weekday -1];
+                          final timeStr = "${DateTime.parse(r["time"]).hour.toString().padLeft(2,'0')}:${DateTime.parse(r["time"]).minute.toString().padLeft(2,'0')}";
+                          final settleTxt = r["isSettled"] == true ? "✅已结" : "☐未结";
+                          return ListTile(
+                            dense:true,
+                            title:Text("${r["date"]} $wt ｜${r["place"]}｜${r["hour"]}h｜${r["type"]}"),
+                            subtitle: Text("$timeStr $settleTxt"),
+                          );
+                        },
+                      ),
+              ),
+              const Divider(),
+              const Text("【按天分组明细（可点开）】", style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(
+                height: 200,
                 child: ListView.builder(
                   shrinkWrap: false,
                   itemCount: group.length,
                   itemBuilder: (dCtx, idx) {
                     final g = group[idx];
-                    final week = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][g["dateObj"].weekday - 1];
                     return ExpansionTile(
-                      title: Text("${g["dateStr"]} $week｜合计${g["sumHour"].toStringAsFixed(2)}h｜${g["count"]}条"),
+                      title: Text("${g["fullDateTitle"]}｜合计${g["sumHour"].toStringAsFixed(2)}h｜${g["count"]}条"),
                       children: g["items"].map<Widget>((sub) {
                         final dt = DateTime.parse(sub["time"]);
                         final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
@@ -535,27 +625,30 @@ class _WorkClockPageState extends State<WorkClockPage> {
       group[key]!.add(item);
     }
     final res = <Map<String, dynamic>>[];
+    const weekText = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
     for (var entry in group.entries) {
       final day = DateTime.parse(entry.key);
       double sumH = 0;
       for (var i in entry.value) {
         sumH += double.parse(i["hour"]);
       }
+      String fullTitle = "${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')} ${weekText[day.weekday - 1]}";
       res.add({
         "dateStr": entry.key,
         "dateObj": day,
+        "fullDateTitle": fullTitle,
         "sumHour": sumH,
         "count": entry.value.length,
         "items": entry.value,
       });
     }
-    res.sort((a, b) => a["dateObj"].compareTo(b["dateObj"]));
+    res.sort((a, b) => b["dateObj"].compareTo(a["dateObj"]));
     return res;
   }
 
   Map<String, Map<String, dynamic>> _groupByPlace() {
     final filter = getFilterRecords();
-    final dayWage = double.tryParse(wageCtrl.text) ?? 0;
+    final dayWage = double.tryParse(wageCtrl.text.trim()) ?? 0;
     if(dayWage>99999) return {};
     final Map<String, Map<String, dynamic>> placeStat = {};
     for (var r in filter) {
@@ -574,305 +667,302 @@ class _WorkClockPageState extends State<WorkClockPage> {
   @override
   Widget build(BuildContext context) {
     final dayRecords = selectedDay == null ? [] : getDayRecords(selectedDay!);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("记工打卡"),
-        actions: [
-          IconButton(
-            onPressed: openSummaryDialog,
-            tooltip: "月度汇总",
-            icon: const Icon(Icons.calendar_view_month),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    setState(() {
-                      if (selectMonth == 1) {
-                        selectMonth = 12;
-                        selectYear--;
-                      } else {
-                        selectMonth--;
-                      }
-                      _focusedDay = DateTime(selectYear, selectMonth, 1);
-                    });
-                    calcMonthStat();
-                  },
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                Expanded(child: Text("$selectYear 年 $selectMonth 月", textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500))),
-                IconButton(
-                  onPressed: () {
-                    final now = DateTime.now();
-                    if (selectYear == now.year && selectMonth == now.month) return;
-                    setState(() {
-                      if (selectMonth == 12) {
-                        selectMonth = 1;
-                        selectYear++;
-                      } else {
-                        selectMonth++;
-                      }
-                      _focusedDay = DateTime(selectYear, selectMonth, 1);
-                    });
-                    calcMonthStat();
-                  },
-                  icon: const Icon(Icons.chevron_right),
-                ),
-                IconButton(
-                  tooltip: panelExpanded ? "折叠面板" : "展开面板",
-                  onPressed: () {
-                    setState(() {
-                      panelExpanded = !panelExpanded;
-                    });
-                  },
-                  icon: Icon(panelExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
-                )
-              ],
+    return GestureDetector(
+      //点击页面空白处，全部输入框失去焦点、收起键盘
+      onTap: () {
+        FocusScope.of(context).unfocus();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("记工打卡"),
+          actions: [
+            IconButton(
+              onPressed: openSummaryDialog,
+              tooltip: "月度汇总",
+              icon: const Icon(Icons.calendar_view_month),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: searchCtrl,
-              decoration: const InputDecoration(
-                labelText: "搜索工地",
-                hintText: "输入工地名称搜索",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.search),
+          ],
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        if (selectMonth == 1) {
+                          selectMonth = 12;
+                          selectYear--;
+                        } else {
+                          selectMonth--;
+                        }
+                        _focusedDay = DateTime(selectYear, selectMonth, 1);
+                      });
+                      calcMonthStat();
+                    },
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Expanded(child: Text("$selectYear 年 $selectMonth 月", textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w500))),
+                  IconButton(
+                    onPressed: () {
+                      final now = DateTime.now();
+                      if (selectYear == now.year && selectMonth == now.month) return;
+                      setState(() {
+                        if (selectMonth == 12) {
+                          selectMonth = 1;
+                          selectYear++;
+                        } else {
+                          selectMonth++;
+                        }
+                        _focusedDay = DateTime(selectYear, selectMonth, 1);
+                      });
+                      calcMonthStat();
+                    },
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                  IconButton(
+                    tooltip: panelExpanded ? "折叠面板" : "展开面板",
+                    onPressed: () {
+                      setState(() {
+                        panelExpanded = !panelExpanded;
+                      });
+                    },
+                    icon: Icon(panelExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                  )
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            if (panelExpanded) ...[
-              // ========== 日记页同款 table_calendar 日历卡片 ==========
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+              const SizedBox(height: 8),
+              TextField(
+                controller: searchCtrl,
+                decoration: const InputDecoration(
+                  labelText: "搜索工地",
+                  hintText: "输入工地名称搜索",
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.search),
                 ),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: TableCalendar(
-                  firstDay: DateTime(2020, 1, 1),
-                  lastDay: DateTime(2035, 12, 31),
-                  focusedDay: _focusedDay,
-                  selectedDayPredicate: (d) => isSameDay(_selectedCalendarDay, d),
-                  onDaySelected: (selDay, focusDay) {
-                    setState(() {
-                      _selectedCalendarDay = selDay;
-                      _focusedDay = focusDay;
-                      selectedDay = selDay;
-                      selectYear = focusDay.year;
-                      selectMonth = focusDay.month;
-                      calcMonthStat();
-                    });
-                  },
-                  onPageChanged: (focusDay) {
-                    setState(() {
-                      _focusedDay = focusDay;
-                      selectYear = focusDay.year;
-                      selectMonth = focusDay.month;
-                      calcMonthStat();
-                    });
-                  },
-                  calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (ctx, day, focusedDay) {
-                      final key = "${day.year}-${day.month}-${day.day}";
-                      bool hasRecord = getHasClockDaySet().contains(key);
-                      if (hasRecord) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text("${day.day}"),
-                              const Text("已打卡", style: TextStyle(fontSize: 8, color: Colors.green)),
-                            ],
+              ),
+              const SizedBox(height: 12),
+              if (panelExpanded) ...[
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: TableCalendar(
+                    firstDay: DateTime(2020, 1, 1),
+                    lastDay: DateTime(2035, 12, 31),
+                    focusedDay: _focusedDay,
+                    selectedDayPredicate: (d) => isSameDay(_selectedCalendarDay, d),
+                    onDaySelected: (selDay, focusDay) {
+                      setState(() {
+                        _selectedCalendarDay = selDay;
+                        _focusedDay = focusDay;
+                        selectedDay = selDay;
+                        selectYear = focusDay.year;
+                        selectMonth = focusDay.month;
+                        calcMonthStat();
+                      });
+                    },
+                    onPageChanged: (focusDay) {
+                      setState(() {
+                        _focusedDay = focusDay;
+                        selectYear = focusDay.year;
+                        selectMonth = focusDay.month;
+                        calcMonthStat();
+                      });
+                    },
+                    calendarStyle: const CalendarStyle(
+                      cellMargin: EdgeInsets.all(2),
+                      cellPadding: EdgeInsets.all(2),
+                      defaultTextStyle: TextStyle(fontSize: 13),
+                      weekendTextStyle: TextStyle(fontSize: 13),
+                      selectedTextStyle: TextStyle(fontSize: 13, color: Colors.white),
+                    ),
+                    headerStyle: const HeaderStyle(
+                      titleTextStyle: TextStyle(fontSize: 14),
+                      formatButtonVisible: false,
+                      titleCentered: true,
+                      headerPadding: EdgeInsets.symmetric(vertical: 4),
+                    ),
+                    daysOfWeekStyle: const DaysOfWeekStyle(
+                      weekdayStyle: TextStyle(fontSize: 11),
+                      weekendStyle: TextStyle(fontSize: 11),
+                    ),
+                    calendarBuilders: CalendarBuilders(
+                      defaultBuilder: (ctx, day, focusedDay) {
+                        final key = "${day.year}-${day.month}-${day.day}";
+                        bool hasRecord = getHasClockDaySet().contains(key);
+                        if (hasRecord) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text("${day.day}", style: const TextStyle(fontSize:13)),
+                                const Text("已打卡", style: TextStyle(fontSize: 7, color: Colors.green)),
+                              ],
+                            ),
+                          );
+                        }
+                        return null;
+                      },
+                      selectedBuilder: (ctx, day, focusedDay) {
+                        final key = "${day.year}-${day.month}-${day.day}";
+                        bool hasRecord = getHasClockDaySet().contains(key);
+                        return Container(
+                          decoration: const BoxDecoration(color: Color(0xFF00798C), shape: BoxShape.circle),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text("${day.day}", style: const TextStyle(fontSize:13, color: Colors.white)),
+                                if (hasRecord)
+                                  const Text("已打卡", style: TextStyle(fontSize: 7, color: Colors.white)),
+                              ],
+                            ),
                           ),
                         );
-                      }
-                      return null;
-                    },
-                    selectedBuilder: (ctx, day, focusedDay) {
-                      final key = "${day.year}-${day.month}-${day.day}";
-                      bool hasRecord = getHasClockDaySet().contains(key);
-                      return Container(
-                        decoration: const BoxDecoration(color: Color(0xFF00798C), shape: BoxShape.circle),
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text("${day.day}", style: const TextStyle(color: Colors.white)),
-                              if (hasRecord)
-                                const Text("已打卡", style: TextStyle(fontSize: 8, color: Colors.white)),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                      },
+                    ),
                   ),
                 ),
-              ),
-              // ======================================================
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(14)),
-                child: Column(
+                const SizedBox(height: 14),
+                Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Column(children: [Text("$monthDays", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("出勤天数")]),
-                        Column(children: [Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("总工时")]),
-                        Column(children: [Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const Text("预估工资")]),
-                      ],
+                    Expanded(
+                      flex:1,
+                      child: TextField(
+                        controller: wageCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                        ],
+                        //失去焦点才保存日工价，不再输入过程频繁计算
+                        onEditingComplete: (){
+                          saveWage();
+                          FocusScope.of(context).unfocus();
+                        },
+                        decoration: const InputDecoration(
+                            labelText: "日工价（8小时工资）",
+                            hintText: "例如：260，上限99999",
+                            border: OutlineInputBorder()
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing:16,
-                      children: [
-                        Text("已结:${monthSettledWage.toStringAsFixed(2)}"),
-                        Text("未结:${monthUnSettledWage.toStringAsFixed(2)}"),
-                      ],
+                    const SizedBox(width:8),
+                    Expanded(
+                      flex:1,
+                      child: Autocomplete<String>(
+                        optionsBuilder: (textEditingValue) {
+                          if (textEditingValue.text.isEmpty) return allPlaceList;
+                          return allPlaceList.where((s) => s.contains(textEditingValue.text));
+                        },
+                        onSelected: (v) {
+                          placeCtrl.text = v;
+                        },
+                        fieldViewBuilder: (context, _, focusNode, onSubmit) {
+                          return TextField(
+                            controller: placeCtrl,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: "工地/项目地点",
+                              hintText: "输入，自动弹出历史工地",
+                              border: OutlineInputBorder(),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: wageCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-                ],
-                onChanged: (val) {
-                  final num = double.tryParse(val);
-                  if(num == null || num <=0 || num > 99999){
-                    return;
-                  }
-                  saveWage();
-                },
-                decoration: const InputDecoration(
-                    labelText: "日工价（8小时工资）",
-                    hintText: "例如：260，上限99999",
-                    border: OutlineInputBorder()
+                const SizedBox(height:10),
+                DropdownButtonFormField<String?>(
+                  value: filterPlace,
+                  decoration: const InputDecoration(labelText: "筛选工地（只看该工地记录）", border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text("全部工地")),
+                    ...allPlaceList.map((e) => DropdownMenuItem(value: e, child: Text(e))),
+                  ],
+                  onChanged: (v) {
+                    setState(() {
+                      filterPlace = v;
+                    });
+                    calcMonthStat();
+                  },
                 ),
-              ),
-              const SizedBox(height: 10),
-              Autocomplete<String>(
-                optionsBuilder: (textEditingValue) {
-                  if (textEditingValue.text.isEmpty) return allPlaceList;
-                  return allPlaceList.where((s) => s.contains(textEditingValue.text));
-                },
-                onSelected: (v) {
-                  placeCtrl.text = v;
-                },
-                fieldViewBuilder: (context, _, focusNode, onSubmit) {
-                  return TextField(
-                    controller: placeCtrl,
-                    focusNode: focusNode,
-                    decoration: const InputDecoration(
-                      labelText: "工地/项目地点",
-                      hintText: "输入，自动弹出历史工地",
-                      border: OutlineInputBorder(),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                        onPressed: autoClock,
+                        child: const Text("自动打卡 8H",maxLines:1,overflow:TextOverflow.ellipsis),
+                      ),
                     ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String?>(
-                value: filterPlace,
-                decoration: const InputDecoration(labelText: "筛选工地（只看该工地记录）", border: OutlineInputBorder()),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text("全部工地")),
-                  ...allPlaceList.map((e) => DropdownMenuItem(value: e, child: Text(e))),
-                ],
-                onChanged: (v) {
-                  setState(() {
-                    filterPlace = v;
-                  });
-                  calcMonthStat();
-                },
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: hourCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: "手动打卡工时", hintText: "半天填4、3.5等", border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                      onPressed: autoClock,
-                      child: const Text("自动打卡 8H",maxLines:1,overflow:TextOverflow.ellipsis),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                        onPressed: manualClock,
+                        child: const Text("手动打卡",maxLines:1),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                      onPressed: manualClock,
-                      child: const Text("手动打卡",maxLines:1),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
+                        onPressed: doRepairSign,
+                        child: const Text("补签",maxLines:1),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
-                      onPressed: doRepairSign,
-                      child: const Text("补签",maxLines:1),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-            dayRecords.isEmpty
-                ? const Padding(padding:EdgeInsets.symmetric(vertical:40),child:Center(child: Text("这一天没有打卡记录")))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: dayRecords.length,
-                    itemBuilder: (ctx, idx) {
-                      final item = dayRecords[idx];
-                      final realIdx = recordList.indexOf(item);
-                      final dt = DateTime.parse(item["time"]);
-                      final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                      final settleTxt = item["isSettled"] == true ? "✅已结" : "☐未结";
-                      return ListTile(
-                        dense: true,
-                        title: Text("${item["place"]} ${item["hour"]}h $settleTxt"),
-                        subtitle: Text("$timeStr ${item["type"]}"),
-                        trailing: SizedBox(
-                          width: 120,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(onPressed: () {
-                                Clipboard.setData(ClipboardData(text:
-                                    "日期：${item["date"]}\n打卡时刻：$timeStr\n工地：${item["place"]}\n工时：${item["hour"]} h\n类型：${item["type"]}\n结账状态：$settleTxt"));
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
-                              }, icon: const Icon(Icons.copy, size: 18)),
-                              IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit, size: 18)),
-                              IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18)),
-                            ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+              Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              dayRecords.isEmpty
+                  ? const Padding(padding:EdgeInsets.symmetric(vertical:40),child:Center(child: Text("这一天没有打卡记录")))
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: dayRecords.length,
+                      itemBuilder: (ctx, idx) {
+                        final item = dayRecords[idx];
+                        final realIdx = recordList.indexOf(item);
+                        final dt = DateTime.parse(item["time"]);
+                        final timeStr = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+                        final settleTxt = item["isSettled"] == true ? "✅已结" : "☐未结";
+                        return ListTile(
+                          dense: true,
+                          title: Text("${item["place"]} ${item["hour"]}h 【${item["type"]}】 $settleTxt"),
+                          subtitle: Text("$timeStr"),
+                          trailing: SizedBox(
+                            width: 120,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(onPressed: () {
+                                  Clipboard.setData(ClipboardData(text:
+                                      "日期：${item["date"]}\n打卡时刻：$timeStr\n工地：${item["place"]}\n工时：${item["hour"]} h\n类型：${item["type"]}\n结账状态：$settleTxt"));
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("已复制本条")));
+                                }, icon: const Icon(Icons.copy, size: 18)),
+                                IconButton(onPressed: () => editRecord(realIdx), icon: const Icon(Icons.edit, size: 18)),
+                                IconButton(onPressed: () => deleteRecord(realIdx), icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18)),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-            const SizedBox(height: 30),
-          ],
+                        );
+                      },
+                    ),
+              const SizedBox(height: 30),
+            ],
+          ),
         ),
       ),
     );
