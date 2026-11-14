@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:table_calendar/table_calendar.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -25,15 +26,16 @@ class _WorkClockPageState extends State<WorkClockPage> {
   double monthUnSettledWage = 0.0;
   int selectYear = DateTime.now().year;
   int selectMonth = DateTime.now().month;
-  DateTime? selectedDay;
+  DateTime selectedDay = DateTime.now();
   String? filterPlace;
   String searchText = "";
   List<String> allPlaceList = [];
+  late CalendarFormat _calendarFormat;
 
   @override
   void initState() {
     super.initState();
-    selectedDay = DateTime.now();
+    _calendarFormat = CalendarFormat.month;
     loadAllData();
     searchCtrl.addListener(() {
       setState(() {
@@ -126,9 +128,17 @@ class _WorkClockPageState extends State<WorkClockPage> {
     return getFilterRecords().where((r) => r["date"] == dayStr).toList();
   }
 
-  Set<String> getHasClockDaySet() {
+  Set<DateTime> getHasClockDaySet() {
     final list = getFilterRecords();
-    return list.map((r) => r["date"].toString()).toSet();
+    return list.map((r) {
+      final d = DateTime.parse(r["date"]);
+      return DateTime(d.year, d.month, d.day);
+    }).toSet();
+  }
+
+  bool dayHasRecord(DateTime dt) {
+    final set = getHasClockDaySet();
+    return set.contains(DateTime(dt.year, dt.month, dt.day));
   }
 
   bool todayAutoSigned() {
@@ -137,7 +147,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
     return recordList.any((i) => i["date"] == todayStr && i["type"] == "全天打卡");
   }
 
-  ///【自动打卡：弹窗输入工地地点】
   void autoClock() {
     if (todayAutoSigned()) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 今日已经自动打卡过了")));
@@ -178,7 +187,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 
-  ///【手动打卡：弹窗输入工地+工时】
   void manualClock() {
     final placeCtrl = TextEditingController();
     final hourCtrl = TextEditingController();
@@ -665,108 +673,14 @@ class _WorkClockPageState extends State<WorkClockPage> {
     return placeStat;
   }
 
-  Widget buildCalendarGrid() {
-    final firstDay = DateTime(selectYear, selectMonth, 1);
-    final firstWeekDay = firstDay.weekday;
-    final daysInMonth = DateTime(selectYear, selectMonth + 1, 0).day;
-    final hasClockDays = getHasClockDaySet();
-    final today = DateTime.now();
-    final todayStr = "${today.year}-${today.month}-${today.day}";
-    List<Widget> cells = [];
-    const weekTitles = ["一", "二", "三", "四", "五", "六", "日"];
-    for (var w in weekTitles) {
-      cells.add(
-        Expanded(
-          child: Center(
-            child: Text(w, style: const TextStyle(fontSize: 14, color: Colors.black87)),
-          ),
-        ),
-      );
-    }
-    for (int i = 1; i < firstWeekDay; i++) {
-      cells.add(const Expanded(child: SizedBox()));
-    }
-    for (int d = 1; d <= daysInMonth; d++) {
-      final dayDt = DateTime(selectYear, selectMonth, d);
-      final dayKey = "${selectYear}-${selectMonth}-$d";
-      final isClock = hasClockDays.contains(dayKey);
-      final isSelected = selectedDay?.year == selectYear && selectedDay?.month == selectMonth && selectedDay?.day == d;
-      final isToday = dayKey == todayStr;
-      cells.add(
-        Expanded(
-          child: InkWell(
-            onTap: () {
-              setState(() {
-                selectedDay = dayDt;
-              });
-            },
-            borderRadius: BorderRadius.circular(999),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFF00798C)
-                          : isClock
-                              ? Colors.green.shade200
-                              : isToday
-                                  ? Colors.blue.shade100
-                                  : null,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      "$d",
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: isSelected ? Colors.white : Colors.black87,
-                        fontWeight: isClock ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    // 锁死日历高度，不会乱跑变大
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 180, minHeight:160),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 6,
-              offset: Offset(0, 2),
-            )
-          ],
-        ),
-        child: GridView.count(
-          shrinkWrap: true,
-          crossAxisCount: 7,
-          physics: const NeverScrollableScrollPhysics(),
-          children: cells,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final dayRecords = selectedDay == null ? [] : getDayRecords(selectedDay!);
+    final dayRecords = getDayRecords(selectedDay);
     return Scaffold(
       appBar: AppBar(
         title: const Text("记工打卡"),
+        centerTitle: true,
+        elevation: 0,
         actions: [
           IconButton(
             onPressed: openSummaryDialog,
@@ -791,6 +705,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       } else {
                         selectMonth--;
                       }
+                      selectedDay = DateTime(selectYear, selectMonth, 1);
                     });
                     calcMonthStat();
                   },
@@ -808,6 +723,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       } else {
                         selectMonth++;
                       }
+                      selectedDay = DateTime(selectYear, selectMonth, 1);
                     });
                     calcMonthStat();
                   },
@@ -828,20 +744,77 @@ class _WorkClockPageState extends State<WorkClockPage> {
             TextField(
               controller: searchCtrl,
               decoration: const InputDecoration(
-                labelText: "搜索工地",
-                hintText: "输入工地名称搜索",
-                border: OutlineInputBorder(),
+                hintText: "搜索工地",
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(30))),
                 prefixIcon: Icon(Icons.search),
+                contentPadding: EdgeInsets.symmetric(vertical:12),
               ),
             ),
             const SizedBox(height: 12),
             if (panelExpanded) ...[
-              ///【内嵌卡片日历，固定高度，不弹窗】
-              buildCalendarGrid(),
+              // 这里就是你截图灰色框位置：table_calendar，和补签弹窗同款样式，直接内嵌
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  color: Colors.white,
+                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5)],
+                ),
+                child: TableCalendar(
+                  focusedDay: DateTime(selectYear, selectMonth, selectedDay.day),
+                  firstDay: DateTime(2020,1,1),
+                  lastDay: DateTime.now(),
+                  calendarFormat: _calendarFormat,
+                  selectedDayPredicate: (day) {
+                    return isSameDay(selectedDay, day);
+                  },
+                  onDaySelected: (selDay, focusDay) {
+                    setState(() {
+                      selectedDay = selDay;
+                    });
+                  },
+                  onPageChanged: (focusDay) {
+                    setState(() {
+                      selectYear = focusDay.year;
+                      selectMonth = focusDay.month;
+                      calcMonthStat();
+                    });
+                  },
+                  calendarBuilders: CalendarBuilders(
+                    defaultBuilder: (ctx, day, focusedDay) {
+                      if(dayHasRecord(day)){
+                        return Container(
+                          alignment: Alignment.center,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text("${day.day}"),
+                              const Text("已打卡", style: TextStyle(fontSize: 9, color: Colors.green)),
+                            ],
+                          ),
+                        );
+                      }
+                      return null;
+                    },
+                    selectedBuilder: (ctx, day, focusedDay){
+                      return Container(
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(color: Color(0xFF2196F3), shape: BoxShape.circle),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text("${day.day}", style: const TextStyle(color: Colors.white)),
+                            if(dayHasRecord(day)) const Text("已打卡", style: TextStyle(fontSize: 9, color: Colors.white)),
+                          ],
+                        ),
+                      );
+                    }
+                  ),
+                ),
+              ),
               const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(color: const Color(0xFFE6F2FF), borderRadius: BorderRadius.circular(14)),
                 child: Column(
                   children: [
                     Row(
@@ -853,11 +826,11 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing:16,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text("已结:${monthSettledWage.toStringAsFixed(2)}"),
+                        const SizedBox(width:20),
                         Text("未结:${monthUnSettledWage.toStringAsFixed(2)}"),
                       ],
                     ),
@@ -865,7 +838,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 ),
               ),
               const SizedBox(height: 14),
-              ///【只保留日工价输入框，删掉页面地点、工时输入框！】
               TextField(
                 controller: wageCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -882,11 +854,10 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 decoration: const InputDecoration(
                     labelText: "日工价（8小时工资）",
                     hintText: "例如：260，上限99999",
-                    border: OutlineInputBorder()
+                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(30)))
                 ),
               ),
               const SizedBox(height: 14),
-              ///【4个按钮横向一排：自动打卡8H｜手动打卡｜补签｜筛选】
               Row(
                 children: [
                   Expanded(
@@ -894,11 +865,12 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.zero,
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.blue,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                         onPressed: autoClock,
-                        child: const Text("自动打卡8H", maxLines:1, overflow:TextOverflow.ellipsis),
+                        child: const Text("自动打卡8H"),
                       ),
                     ),
                   ),
@@ -908,11 +880,12 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.zero,
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.blue,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                         onPressed: manualClock,
-                        child: const Text("手动打卡", maxLines:1),
+                        child: const Text("手动打卡"),
                       ),
                     ),
                   ),
@@ -922,12 +895,12 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          backgroundColor: Colors.grey.shade200,
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.grey,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                         onPressed: doRepairSign,
-                        child: const Text("补签", maxLines:1),
+                        child: const Text("补签"),
                       ),
                     ),
                   ),
@@ -937,12 +910,12 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          backgroundColor: Colors.orange.shade100,
+                          backgroundColor: const Color(0xFFFFE6B3),
+                          foregroundColor: Colors.orange,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                         onPressed: openFilterDialog,
-                        child: const Text("筛选", maxLines:1),
+                        child: const Text("筛选"),
                       ),
                     ),
                   ),
@@ -950,7 +923,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
               ),
               const SizedBox(height: 16),
             ],
-            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
+            Text("${selectedDay.year}-${selectedDay.month}-${selectedDay.day} 打卡记录", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             dayRecords.isEmpty
                 ? const Padding(padding:EdgeInsets.symmetric(vertical:40),child:Center(child: Text("这一天没有打卡记录")))
