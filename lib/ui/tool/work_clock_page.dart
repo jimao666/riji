@@ -5,7 +5,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 class WorkClockPage extends StatefulWidget {
   const WorkClockPage({super.key});
@@ -16,8 +15,6 @@ class WorkClockPage extends StatefulWidget {
 
 class _WorkClockPageState extends State<WorkClockPage> {
   List<Map<String, dynamic>> recordList = [];
-  final TextEditingController hourCtrl = TextEditingController();
-  final TextEditingController placeCtrl = TextEditingController();
   final TextEditingController wageCtrl = TextEditingController();
   final TextEditingController searchCtrl = TextEditingController();
   bool panelExpanded = true;
@@ -140,44 +137,98 @@ class _WorkClockPageState extends State<WorkClockPage> {
     return recordList.any((i) => i["date"] == todayStr && i["type"] == "全天打卡");
   }
 
+  ///【自动打卡：弹窗输入工地地点】
   void autoClock() {
     if (todayAutoSigned()) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 今日已经自动打卡过了")));
       return;
     }
-    final now = DateTime.now();
-    final item = {
-      "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
-      "time": now.toIso8601String(),
-      "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
-      "hour": "8.00",
-      "type": "全天打卡",
-      "isSettled": false,
-    };
-    recordList.add(item);
-    saveRecords();
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 全天打卡成功，工时8h")));
+    final placeCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("自动打卡 8H"),
+        content: TextField(
+          controller: placeCtrl,
+          decoration: const InputDecoration(labelText: "工地/项目地点", hintText: "填写工地名称"),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          TextButton(
+            onPressed: () {
+              final now = DateTime.now();
+              final place = placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim();
+              final item = {
+                "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
+                "time": now.toIso8601String(),
+                "place": place,
+                "hour": "8.00",
+                "type": "全天打卡",
+                "isSettled": false,
+              };
+              recordList.add(item);
+              saveRecords();
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 全天打卡成功，工时8h")));
+            },
+            child: const Text("确认打卡"),
+          ),
+        ],
+      ),
+    );
   }
 
+  ///【手动打卡：弹窗输入工地+工时】
   void manualClock() {
-    final h = double.tryParse(hourCtrl.text);
-    if (h == null || h <= 0 || h > 24) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 请输入合法工时（0~24）")));
-      return;
-    }
-    final now = DateTime.now();
-    final item = {
-      "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
-      "time": now.toIso8601String(),
-      "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
-      "hour": h.toStringAsFixed(2),
-      "type": "手动打卡",
-      "isSettled": false,
-    };
-    recordList.add(item);
-    hourCtrl.clear();
-    saveRecords();
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 手动打卡成功")));
+    final placeCtrl = TextEditingController();
+    final hourCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("手动打卡"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: placeCtrl,
+              decoration: const InputDecoration(labelText: "工地/项目地点"),
+            ),
+            TextField(
+              controller: hourCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: "工时", hintText: "例如：4、3.5"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
+          TextButton(
+            onPressed: () {
+              final h = double.tryParse(hourCtrl.text);
+              if (h == null || h <= 0 || h > 24) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ 请输入合法工时（0~24）")));
+                return;
+              }
+              final now = DateTime.now();
+              final place = placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim();
+              final item = {
+                "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
+                "time": now.toIso8601String(),
+                "place": place,
+                "hour": h.toStringAsFixed(2),
+                "type": "手动打卡",
+                "isSettled": false,
+              };
+              recordList.add(item);
+              saveRecords();
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ 手动打卡成功")));
+            },
+            child: const Text("确认打卡"),
+          ),
+        ],
+      ),
+    );
   }
 
   void doRepairSign() async {
@@ -188,15 +239,25 @@ class _WorkClockPageState extends State<WorkClockPage> {
       lastDate: DateTime.now(),
     );
     if (pickDate == null) return;
+    final repairPlaceCtrl = TextEditingController();
     final repairHourCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text("补签：${pickDate.year}-${pickDate.month}-${pickDate.day}"),
-        content: TextField(
-          controller: repairHourCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(hintText: "输入工时，例如 8 / 4"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: repairPlaceCtrl,
+              decoration: const InputDecoration(labelText: "工地/项目地点"),
+            ),
+            TextField(
+              controller: repairHourCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(hintText: "输入工时，例如 8 / 4"),
+            ),
+          ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("取消")),
@@ -210,7 +271,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
               final item = {
                 "date": "${pickDate.year}-${pickDate.month.toString().padLeft(2, '0')}-${pickDate.day.toString().padLeft(2, '0')}",
                 "time": pickDate.toIso8601String(),
-                "place": placeCtrl.text.trim().isEmpty ? "未填写工地" : placeCtrl.text.trim(),
+                "place": repairPlaceCtrl.text.trim().isEmpty ? "未填写工地" : repairPlaceCtrl.text.trim(),
                 "hour": h.toStringAsFixed(2),
                 "type": "补签",
                 "isSettled": false,
@@ -666,8 +727,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  const Text("", style: TextStyle(fontSize: 10, color: Colors.grey))
                 ],
               ),
             ),
@@ -675,6 +734,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
         ),
       );
     }
+    // 锁死日历高度，不会乱跑变大
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 180, minHeight:160),
       child: Container(
@@ -776,6 +836,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
             ),
             const SizedBox(height: 12),
             if (panelExpanded) ...[
+              ///【内嵌卡片日历，固定高度，不弹窗】
               buildCalendarGrid(),
               const SizedBox(height: 14),
               Container(
@@ -804,6 +865,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 ),
               ),
               const SizedBox(height: 14),
+              ///【只保留日工价输入框，删掉页面地点、工时输入框！】
               TextField(
                 controller: wageCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -823,66 +885,65 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     border: OutlineInputBorder()
                 ),
               ),
-              const SizedBox(height: 10),
-              Autocomplete<String>(
-                optionsBuilder: (textEditingValue) {
-                  if (textEditingValue.text.isEmpty) return allPlaceList;
-                  return allPlaceList.where((s) => s.contains(textEditingValue.text));
-                },
-                onSelected: (v) {
-                  placeCtrl.text = v;
-                },
-                fieldViewBuilder: (context, _, focusNode, onSubmit) {
-                  return TextField(
-                    controller: placeCtrl,
-                    focusNode: focusNode,
-                    decoration: const InputDecoration(
-                      labelText: "工地/项目地点",
-                      hintText: "输入，自动弹出历史工地",
-                      border: OutlineInputBorder(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: hourCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: "手动打卡工时", hintText: "半天填4、3.5等", border: OutlineInputBorder()),
-              ),
               const SizedBox(height: 14),
-              // 4个按钮横向一排：自动打卡8H｜手动打卡｜补签｜筛选
+              ///【4个按钮横向一排：自动打卡8H｜手动打卡｜补签｜筛选】
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                      onPressed: autoClock,
-                      child: const Text("自动打卡8H",maxLines:1,overflow:TextOverflow.ellipsis),
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        onPressed: autoClock,
+                        child: const Text("自动打卡8H", maxLines:1, overflow:TextOverflow.ellipsis),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                      onPressed: manualClock,
-                      child: const Text("手动打卡",maxLines:1),
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        onPressed: manualClock,
+                        child: const Text("手动打卡", maxLines:1),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.grey.shade200),
-                      onPressed: doRepairSign,
-                      child: const Text("补签",maxLines:1),
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: Colors.grey.shade200,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        onPressed: doRepairSign,
+                        child: const Text("补签", maxLines:1),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: Colors.orange.shade100),
-                      onPressed: openFilterDialog,
-                      child: const Text("筛选",maxLines:1),
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: Colors.orange.shade100,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        onPressed: openFilterDialog,
+                        child: const Text("筛选", maxLines:1),
+                      ),
                     ),
                   ),
                 ],
