@@ -26,7 +26,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
   String? filterPlace;
   String searchText = "";
   List<String> allPlaceList = [];
-  bool foldBelowCalendar = false; // 控制：日历下方全部折叠，只保留打卡记录
+  bool foldBelowCalendar = false;
 
   final TextEditingController wageCtrl = TextEditingController();
 
@@ -320,7 +320,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
     );
   }
 
-  // 和showDatePicker风格一致的日历
   Widget buildCalendar() {
     final DateTime firstDayOfMonth = DateTime(selectYear, selectMonth, 1);
     final int firstWeekday = firstDayOfMonth.weekday;
@@ -342,10 +341,10 @@ class _WorkClockPageState extends State<WorkClockPage> {
               selectedDay = DateTime(selectYear, selectMonth, d);
             });
           },
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: Container(
             alignment: Alignment.center,
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: selected
                   ? Theme.of(context).primaryColor
@@ -359,10 +358,10 @@ class _WorkClockPageState extends State<WorkClockPage> {
               children: [
                 Text(
                   "$d",
-                  style: TextStyle(color: selected ? Colors.white : Colors.black87, fontSize: 14),
+                  style: TextStyle(color: selected ? Colors.white : Colors.black87, fontSize: 13),
                 ),
                 if (hasRecord && !selected)
-                  const Positioned(bottom: 0, child: Icon(Icons.check, size: 8, color: Colors.green)),
+                  const Positioned(bottom: 0, child: Icon(Icons.check, size: 7, color: Colors.green)),
               ],
             ),
           ),
@@ -374,7 +373,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -392,9 +391,9 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     }
                   });
                 },
-                icon: const Icon(Icons.chevron_left),
+                icon: const Icon(Icons.chevron_left, size:20),
               ),
-              Text("$selectYear 年 $selectMonth 月", style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text("$selectYear 年 $selectMonth 月", style: const TextStyle(fontWeight: FontWeight.w600, fontSize:15)),
               IconButton(
                 onPressed: () {
                   setState(() {
@@ -406,21 +405,28 @@ class _WorkClockPageState extends State<WorkClockPage> {
                     }
                   });
                 },
-                icon: const Icon(Icons.chevron_right),
+                icon: const Icon(Icons.chevron_right, size:20),
               ),
             ],
           ),
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Text("一"), Text("二"), Text("三"), Text("四"), Text("五"), Text("六"), Text("日"),
+              Text("一",style:TextStyle(fontSize:12)),
+              Text("二",style:TextStyle(fontSize:12)),
+              Text("三",style:TextStyle(fontSize:12)),
+              Text("四",style:TextStyle(fontSize:12)),
+              Text("五",style:TextStyle(fontSize:12)),
+              Text("六",style:TextStyle(fontSize:12)),
+              Text("日",style:TextStyle(fontSize:12)),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: 7,
+            childAspectRatio: 1,
             children: dayItems,
           ),
         ],
@@ -444,25 +450,28 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 setState(() {});
               },
             ),
-            const SizedBox(height: 12),
-            buildCalendar(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            // 折叠按钮放在汇总右上角，点它：日历下面全部折叠，只留打卡记录
+            // 折叠按钮放在【日历上方靠右】
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                const SizedBox(),
                 IconButton(
                   padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   onPressed: () {
                     setState(() {
                       foldBelowCalendar = !foldBelowCalendar;
                     });
                   },
-                  icon: Icon(foldBelowCalendar ? Icons.expand_more : Icons.expand_less),
+                  icon: Icon(foldBelowCalendar ? Icons.expand_more : Icons.expand_less, size:22),
                 ),
               ],
             ),
+
+            buildCalendar(),
+            const SizedBox(height: 10),
 
             if (!foldBelowCalendar)
               Column(
@@ -470,7 +479,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
                 children: [
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: Colors.lightBlue.shade50, borderRadius: BorderRadius.circular(16)),
                     child: Column(
                       children: [
@@ -478,55 +487,81 @@ class _WorkClockPageState extends State<WorkClockPage> {
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             Column(children: [
-                              Text("$monthDays", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                              const Text("出勤天数")
+                              Text("$monthDays", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                              const Text("出勤天数",style:TextStyle(fontSize:12))
                             ]),
                             Column(children: [
-                              Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                              const Text("总工时")
+                              Text("${monthTotalHour.toStringAsFixed(2)} h", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                              const Text("总工时",style:TextStyle(fontSize:12))
                             ]),
                             Column(children: [
-                              Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-                              const Text("预估工资")
+                              Text("${monthTotalWage.toStringAsFixed(2)} 元", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                              const Text("预估工资",style:TextStyle(fontSize:12))
                             ]),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text("已结:${monthSettledWage.toStringAsFixed(2)}    未结:${monthUnSettledWage.toStringAsFixed(2)}"),
+                        const SizedBox(height: 4),
+                        Text("已结:${monthSettledWage.toStringAsFixed(2)}    未结:${monthUnSettledWage.toStringAsFixed(2)}",style:const TextStyle(fontSize:12)),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: wageCtrl,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(labelText: "日工价（8小时工资）"),
                     onChanged: (_) => calcMonthStat(),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  // 四个按钮一行，等宽，文字单行不折行
                   Row(
                     children: [
-                      Expanded(child: ElevatedButton(onPressed: autoClock, child: const Text("自动打卡 8H"))),
-                      const SizedBox(width: 6),
-                      Expanded(child: ElevatedButton(onPressed: manualClock, child: const Text("手动打卡"))),
-                      const SizedBox(width: 6),
-                      Expanded(child: ElevatedButton(onPressed: doRepairSign, child: const Text("补签"))),
-                      const SizedBox(width: 6),
-                      Expanded(child: ElevatedButton(onPressed: openFilterDialog, child: const Text("筛选"))),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: autoClock,
+                          style: ElevatedButton.styleFrom(padding:const EdgeInsets.symmetric(vertical:10)),
+                          child: const FittedBox(child: Text("自动打卡8H")),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: manualClock,
+                          style: ElevatedButton.styleFrom(padding:const EdgeInsets.symmetric(vertical:10)),
+                          child: const FittedBox(child: Text("手动打卡")),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: doRepairSign,
+                          style: ElevatedButton.styleFrom(padding:const EdgeInsets.symmetric(vertical:10)),
+                          child: const FittedBox(child: Text("补签")),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: openFilterDialog,
+                          style: ElevatedButton.styleFrom(padding:const EdgeInsets.symmetric(vertical:10)),
+                          child: const FittedBox(child: Text("筛选")),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                 ],
               ),
 
-            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录"),
-            const SizedBox(height: 8),
+            Text("${selectedDay?.year}-${selectedDay?.month}-${selectedDay?.day} 打卡记录",style:const TextStyle(fontSize:14)),
+            const SizedBox(height: 6),
             ...getDayRecords(selectedDay!).map((item) => Card(
               child: ListTile(
                 title: Text(item["place"]),
                 subtitle: Text("${item["type"]} | 工时：${item["hour"]}h | 日工价：${item["dayWage"]}"),
               ),
             )).toList(),
+            const SizedBox(height:20),
           ],
         ),
       ),
