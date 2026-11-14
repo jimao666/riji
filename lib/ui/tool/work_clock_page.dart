@@ -31,7 +31,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
   String searchText = "";
   List<String> allPlaceList = [];
 
-  // ============ table_calendar 新增状态变量 ============
   late DateTime _focusedDay;
   late DateTime _selectedCalendarDay;
 
@@ -394,7 +393,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
             recordList.removeAt(index);
             saveRecords();
             Navigator.pop(ctx);
-          }, child: const Text("删除", style: TextStyle(color: Colors.red)),
+          }, child: const Text("删除", style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -412,7 +411,7 @@ class _WorkClockPageState extends State<WorkClockPage> {
             recordList.clear();
             saveRecords();
             Navigator.pop(ctx);
-          }, child: const Text("清空", style: TextStyle(color: Colors.red)),
+          }, child: const Text("清空", style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -752,7 +751,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
             ),
             const SizedBox(height: 12),
             if (panelExpanded) ...[
-              // ===================== 【修改点：此处替换为table_calendar日历卡片，其余全部不动】 =====================
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -831,7 +829,6 @@ class _WorkClockPageState extends State<WorkClockPage> {
                   ),
                 ),
               ),
-              // ==================================================================================================
               const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
@@ -927,17 +924,14 @@ class _WorkClockPageState extends State<WorkClockPage> {
                   Expanded(
                     child: SizedBox(
                       height: 48,
-                      child: SizedBox(
-                        height: 48,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            backgroundColor: Colors.orange.shade100,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          ),
-                          onPressed: openFilterDialog,
-                          child: const Text("筛选", maxLines:1),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          backgroundColor: Colors.orange.shade100,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
+                        onPressed: openFilterDialog,
+                        child: const Text("筛选", maxLines:1),
                       ),
                     ),
                   ),
